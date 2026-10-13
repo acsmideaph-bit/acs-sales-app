@@ -16,6 +16,8 @@ import { buildSuggestions } from '../../lib/fcrSuggestions'
 import { downloadFcrPdf } from '../../lib/lazy'
 import { FCRFormBody, CustomerInfo } from './FCRFormBody'
 import { MinutesView } from '../../components/MinutesView'
+import { VisitPhoto } from '../../components/VisitPhoto'
+import { uploadVisitPhoto } from '../../lib/photo'
 import { PageHeader, Spinner, StatusChip, AckChip, Field, Segmented, Modal, confirm, prompt } from '../../components/ui'
 import { notifyPendingChanged } from '../../components/Layout'
 import {
@@ -38,6 +40,8 @@ export function FCRForm() {
   const [showMinutes, setShowMinutes] = useState(false)
   const [requests, setRequests] = useState([])
   const [viber, setViber] = useState(null) // { number, message } after a Viber request is recorded
+  const [photo, setPhoto] = useState(null)
+  const [photoStep, setPhotoStep] = useState('')
 
   useEffect(() => { fetchAccounts({ activeOnly: false }).then(setAccounts) }, [])
 
@@ -49,6 +53,7 @@ export function FCRForm() {
     setDirty(false)
     supabase.from('email_log').select('created_at, recipient, result, error').eq('related_id', id).order('created_at', { ascending: false }).then(({ data: e }) => setEmails(e || []))
     supabase.from('fcr_ack_requests').select('*').eq('fcr_id', id).order('sent_at', { ascending: false }).then(({ data: r }) => setRequests(r || []))
+    supabase.from('fcr_photos').select('*').eq('fcr_id', id).maybeSingle().then(({ data: ph }) => setPhoto(ph || null))
   }, [id, navigate])
 
   useEffect(() => {
@@ -165,7 +170,31 @@ export function FCRForm() {
     return newId
   }
 
+  const needPhoto = () => {
+    if (photo) return false
+    setErrors((e) => ({ ...e, photo: 'Take the visit photo first' }))
+    toast.error('Take the visit photo first. It is required before sending for acknowledgement.')
+    return true
+  }
+
+  const takePhoto = async (file) => {
+    if (!validate()) return
+    setBusy('photo'); setErrors((e) => ({ ...e, photo: undefined }))
+    try {
+      let fid = fcr.id
+      if (!fid || dirty) {
+        if (!await confirmResetIfNeeded()) return
+        fid = await persist()
+        if (!fcr.id) navigate(`/fcr/${fid}`, { replace: true })
+      }
+      const r = await uploadVisitPhoto({ fcrId: fid, ownerId: user.id, file, onStep: (s) => setPhotoStep(`${s}…`) })
+      toast.success(r.located ? 'Photo saved with time and location' : 'Photo saved. Location was not shared, and your RSM will see that.')
+      if (fcr.id) await load()
+    } catch (e) { toast.error(e.message) } finally { setBusy(''); setPhotoStep('') }
+  }
+
   const sendEmail = async () => {
+    if (needPhoto()) return
     if (!fcr.attendee_email?.trim()) { setErrors({ attendee_email: 'Enter the attendee email, or send by Viber' }); return }
     setBusy('email')
     try {
@@ -182,6 +211,7 @@ export function FCRForm() {
   // RSM sees where it went; then Viber opens on that number with the message
   // ready to paste (Viber's links can't pre-fill text into a specific chat).
   const sendViber = async () => {
+    if (needPhoto()) return
     const number = normalizePhMobile(fcr.attendee_mobile)
     const owner = (fcr.attendee_mobile_owner || fcr.attendee_name || '').trim()
     const e = {}
@@ -205,6 +235,7 @@ export function FCRForm() {
   }
 
   const copyLink = async () => {
+    if (needPhoto()) return
     setBusy('link')
     try {
       const fid = await ensureSaved()
@@ -247,6 +278,11 @@ export function FCRForm() {
     try { await downloadFcrPdf({ fcr: { ...fcr, customer_info: customerInfo }, submitterName: kamName, submitterPosition: owner?.position, reviewerName: byId[fcr.reviewed_by]?.full_name }) }
     catch (e) { toast.error('PDF failed: ' + e.message) } finally { setBusy('') }
   }
+
+  const photoPanel = (
+    <VisitPhoto photo={photo} visitDate={fcr.visit_date} error={errors.photo} busyStep={photoStep}
+      canChange={editable && fcr.ack_status === 'not_sent'} onFile={takePhoto} />
+  )
 
   const selectableAccounts = accounts.filter((a) => a.active || a.id === fcr.account_id)
   const mine = selectableAccounts.filter((a) => a.kam_id === fcr.owner_id)
@@ -303,6 +339,8 @@ export function FCRForm() {
 
           {template && fcr.form_data && (
             <>
+              {/* On phones the side column falls below the long form; keep the photo near the top. */}
+              <div className="xl:hidden">{photoPanel}</div>
               <CustomerInfo template={template} info={customerInfo} visitDate={fcr.visit_date} period={fcr.period} kamName={kamName} />
               <FCRFormBody template={template} formData={fcr.form_data} readOnly={!editable} errors={errors}
                 onChange={(fd) => update({ form_data: fd })} />
@@ -312,7 +350,8 @@ export function FCRForm() {
 
         {/* Right rail */}
         {template && fcr.form_data && (
-          <div className="space-y-4 xl:sticky xl:top-5">
+          <div className="space-y-4">
+            <div className="hidden xl:block">{photoPanel}</div>
             <div className="panel">
               <div className="panel-head"><span className="panel-title">Customer acknowledgement</span><AckChip status={fcr.ack_status} /></div>
               <div className="p-4 space-y-3">
@@ -415,11 +454,11 @@ export function FCRForm() {
 
       {editable && template && (
         <div className="sticky bottom-0 mt-5 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 bg-white/95 backdrop-blur border-t border-line flex items-center gap-2 print:hidden">
-          <span className="text-[12px] text-ink-3">{dirty ? 'Unsaved changes' : fcr.id ? 'All changes saved' : 'Not saved yet'}</span>
-          <button className="btn-secondary ml-auto" onClick={save} disabled={Boolean(busy)}><Save size={14} /> Save draft</button>
+          <span className="hidden sm:inline text-[12px] text-ink-3">{dirty ? 'Unsaved changes' : fcr.id ? 'All changes saved' : 'Not saved yet'}</span>
+          <button className="btn-secondary sm:ml-auto" onClick={save} disabled={Boolean(busy)}><Save size={14} /> <span className="sm:hidden">Save</span><span className="hidden sm:inline">Save draft</span></button>
           {fcr.ack_status !== 'acknowledged' && <>
-            <button className="btn-primary" onClick={sendEmail} disabled={Boolean(busy)}><Mail size={14} /> Send by email</button>
-            <button className="btn-primary" onClick={sendViber} disabled={Boolean(busy)}><MessageCircle size={14} /> Send by Viber</button>
+            <button className="btn-primary flex-1 sm:flex-none justify-center" onClick={sendEmail} disabled={Boolean(busy)}><Mail size={14} /> <span className="sm:hidden">Email</span><span className="hidden sm:inline">Send by email</span></button>
+            <button className="btn-primary flex-1 sm:flex-none justify-center" onClick={sendViber} disabled={Boolean(busy)}><MessageCircle size={14} /> <span className="sm:hidden">Viber</span><span className="hidden sm:inline">Send by Viber</span></button>
           </>}
         </div>
       )}

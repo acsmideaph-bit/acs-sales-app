@@ -36,7 +36,7 @@ export async function fetchAccounts({ activeOnly = true } = {}) {
 
 // Acknowledged FCRs in a date range, with owner/reviewer names attached.
 export async function fetchReportFcrs({ from, to, ownerIds, approvedOnly = false, byId }) {
-  let q = supabase.from('fcrs').select('*')
+  let q = supabase.from('fcrs').select('*, photo:fcr_photos(*)')
     .eq('ack_status', 'acknowledged')
     .gte('visit_date', from).lte('visit_date', to)
     .order('visit_date').order('created_at')

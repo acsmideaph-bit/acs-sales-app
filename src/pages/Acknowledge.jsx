@@ -99,7 +99,7 @@ export function Acknowledge() {
             </div>
             {error && <p className="text-[13px] text-bad">{error}</p>}
             <button className="btn-primary w-full h-11 text-[15px]" disabled={!name.trim() || busy} onClick={confirmIt}>{busy ? 'Confirming…' : 'Confirm these minutes'}</button>
-            <p className="text-2xs text-ink-4 text-center">Your name, the time and any comment are recorded with the report.</p>
+            <p className="text-2xs text-ink-4 text-center">Your name, the time and any comment are recorded with the report. A photo taken during the meeting is kept with Concepcion Midea's internal record of this visit for 60 days.</p>
           </div>
         )}
       </div>

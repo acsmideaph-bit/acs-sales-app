@@ -1,5 +1,7 @@
 import { jsPDF } from 'jspdf'
 import { ackRequestLine } from './ack'
+import { supabase } from './supabase'
+import { photoFacts, photoFlags, mapsUrl, PHOTO_BUCKET } from './photo'
 import autoTable from 'jspdf-autotable'
 import logoUrl from './cmip-logo.jpg'
 import { fmt, fmtDateTime } from './dates'
@@ -159,6 +161,9 @@ export async function renderFcr(doc, { fcr, submitterName, submitterPosition, re
     columnStyles: { 0: { cellWidth: 92 }, 2: { cellWidth: 70 } },
   })
 
+  y = doc.lastAutoTable.finalY + 10
+  y = await photoSection(doc, y, fcr)
+
   // Footer on every page of THIS FCR (combined exports hold many FCRs).
   const last = doc.getNumberOfPages()
   doc.setFontSize(6.5); doc.setTextColor(120)
@@ -168,6 +173,43 @@ export async function renderFcr(doc, { fcr, submitterName, submitterPosition, re
   }
   doc.setTextColor(0)
   return last
+}
+
+// Visit photo + its recorded time/location. The image is included while the
+// file exists (60-day retention); the details are always printed.
+async function photoSection(doc, y, fcr) {
+  if (!fcr?.id) return y
+  const { data: photo } = await supabase.from('fcr_photos').select('*').eq('fcr_id', fcr.id).maybeSingle()
+  if (!photo) return y
+  let img = null; let iw = 0; let ih = 0
+  if (!photo.purged_at) {
+    try {
+      const { data } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(photo.storage_path, 300)
+      const blob = await (await fetch(data.signedUrl)).blob()
+      img = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob) })
+      const ratio = (photo.height || 3) / (photo.width || 4)
+      iw = 190; ih = Math.min(240, iw * ratio); if (ih === 240) iw = ih / ratio
+    } catch { img = null }
+  }
+  const need = Math.max(ih, 80) + 30
+  if (y + need > doc.internal.pageSize.getHeight() - 40) { doc.addPage(); y = M }
+  y = bar(doc, y, 'Visit Photo (evidence of customer engagement)')
+  const top = y + 8
+  if (img) doc.addImage(img, 'JPEG', M, top, iw, ih)
+  const tx = img ? M + iw + 14 : M
+  const tw = doc.internal.pageSize.getWidth() - M - tx
+  const flags = photoFlags(photo, fcr.visit_date)
+  let ty = top + 8
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8)
+  for (const line of [...photoFacts(photo), ...(photo.lat != null ? [`Map: ${mapsUrl(photo.lat, photo.lng)}`] : [])]) {
+    const parts = doc.splitTextToSize(line, tw); doc.text(parts, tx, ty); ty += parts.length * 10 + 2
+  }
+  if (flags.length) {
+    doc.setTextColor(170, 100, 0); doc.setFont('helvetica', 'bold')
+    for (const f of flags) { const parts = doc.splitTextToSize(`To check: ${f}`, tw); doc.text(parts, tx, ty); ty += parts.length * 10 + 2 }
+    doc.setTextColor(0); doc.setFont('helvetica', 'normal')
+  }
+  return Math.max(top + ih, ty) + 10
 }
 
 export const fcrFileName = (fcr, ownerName) =>

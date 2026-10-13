@@ -3,6 +3,7 @@ import { fmt, fmtDateTime } from './dates'
 import { templateFor, filledRows, num, normalizeFormData } from './fcrTemplates'
 import { STATUS_LABELS } from './roles'
 import { ACK_CHANNEL_LABELS } from './ack'
+import { photoFlags } from './photo'
 
 // Styled Excel exports. One build*Sheet() per tab, plain computed values (not
 // live formulas) because every export is regenerated fresh from the database.
@@ -100,6 +101,10 @@ export function buildExportWorkbook({ fcrs, archives = [], from, to, scopeLabel 
     { header: 'Request sent via', width: 12, value: (f) => ACK_CHANNEL_LABELS[f.ack_channel] || '' },
     { header: 'Sent to', width: 24, value: (f) => f.ack_recipient },
     { header: 'Number/email owner', width: 20, value: (f) => f.ack_recipient_name },
+    { header: 'Photo uploaded', width: 17, value: (f) => fmtDateTime(f.photo?.uploaded_at) },
+    { header: 'Photo location', width: 22, value: (f) => (f.photo?.lat != null ? `${f.photo.lat.toFixed(5)}, ${f.photo.lng.toFixed(5)}` : '') },
+    { header: 'Photo place', width: 36, value: (f) => f.photo?.place_label },
+    { header: 'Photo flags', width: 30, value: (f) => photoFlags(f.photo, f.visit_date).join('; ') },
     { header: 'Status', width: 14, value: (f) => STATUS_LABELS[f.status] },
     { header: 'Reviewed by', width: 20, value: (f) => f.reviewer_name },
     { header: 'Review comment', width: 30, value: (f) => f.review_comment },

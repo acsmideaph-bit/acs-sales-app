@@ -24,12 +24,13 @@ flowchart LR
 **After every visit**
 1. *Field Contact Reports* → **New FCR** → pick the account. The form (ACS or Sub Dealer) follows the account type; the header fills from the account profile.
 2. Fill the sections you covered. Get-Back Items and Coverage Notes are what the customer will read most closely. *Preview minutes* shows exactly what they will see.
-3. Enter the **attendee name** (required), then send the acknowledgement request either way:
+3. **Take the visit photo** with the customer (ask them first). One photo per FCR, and it is **required** before you can send for acknowledgement. On a phone the camera opens directly; allow location when asked. The app records the time and where the photo was taken. You can retake it until the request goes out; after that it is locked.
+4. Enter the **attendee name** (required), then send the acknowledgement request either way:
    - **By email**: enter the attendee's email address.
    - **By Viber**: enter the **Viber number** and the **number owner** (whose number it is). The app records the request, copies a ready-made message and opens a Viber chat with that number. Paste and send. Send it to that same number so the record matches.
    - Both are recorded under *Where the request went* (channel, number or address, owner, time). Your RSM sees this on the FCR, in the approval queue and in the PDF. **Copy link only** is for other apps; it does not record a recipient, so prefer Viber or email.
-4. When the customer clicks **Confirm**, the FCR goes to your RSM automatically. The dashboard shows anything still waiting.
-5. If the RSM returns it, correct it and send for acknowledgement again (changing the report after the customer confirmed means they must confirm the new version).
+5. When the customer clicks **Confirm**, the FCR goes to your RSM automatically. The dashboard shows anything still waiting.
+6. If the RSM returns it, correct it and send for acknowledgement again (changing the report after the customer confirmed means they must confirm the new version).
 
 **Notes**
 - The visit date locks once you request acknowledgement, and can't be in the future.
@@ -40,6 +41,7 @@ flowchart LR
 
 - You approve your KAMs' FCRs and MCP Plans. RSMs do not file FCRs or MCP Plans of their own.
 - Sidebar badges show what's waiting. **FCR approvals**: *Review* shows the confirmed minutes, who confirmed and when, and where the request was sent (e.g. *Sent via Viber to +63917… (Juan Cruz)*); **Approve** or **Return** (a comment is required to return). You can tick several and approve together.
+- Each FCR shows the **visit photo** with its time, the place and a map link. Meetings away from the customer's office (meals, other venues) are normal, so the app does not flag distance; you judge. It only flags a photo dated on a different day than the visit, or a missing location. Photo files are deleted after 60 days; the time, place and map link stay.
 - Check that the number or address belongs to the customer named in the FCR. The app records what the KAM entered; it cannot read the Viber conversation itself.
 - **MCP Plan approvals**: expand to see the calendar, then approve or return.
 - *Dashboard → Team overview* shows each KAM's week (drafts, awaiting customer, pending, approved, returned) and MCP Plan / Actual for the month. Click a KAM to open their MCP Actual.
