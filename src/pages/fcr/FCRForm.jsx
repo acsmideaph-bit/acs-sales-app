@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
-  ArrowLeft, Save, Send, Mail, Link2, RefreshCw, FileDown, Trash2, CheckCircle2, Clock3, Lock, Users, Lightbulb, Check, X, Eye,
+  ArrowLeft, Save, Send, Mail, Link2, RefreshCw, FileDown, Trash2, CheckCircle2, Clock3, Lock, Users, Lightbulb, Check, X, Eye, MessageCircle, Copy,
 } from 'lucide-react'
 import { supabase, rpc, invokeFunction } from '../../lib/supabase'
 import { fetchAccounts, useProfiles } from '../../lib/data'
@@ -18,8 +18,9 @@ import { FCRFormBody, CustomerInfo } from './FCRFormBody'
 import { MinutesView } from '../../components/MinutesView'
 import { PageHeader, Spinner, StatusChip, AckChip, Field, Segmented, Modal, confirm, prompt } from '../../components/ui'
 import { notifyPendingChanged } from '../../components/Layout'
-
-const ackLink = (token) => `${window.location.origin}${window.location.pathname}#/acknowledge/${token}`
+import {
+  ACK_CHANNEL_LABELS, ackLink, ackRequestLine, mobileFromContact, normalizePhMobile, viberChatUrl, viberForwardUrl, viberMessage,
+} from '../../lib/ack'
 
 export function FCRForm() {
   const { id } = useParams()
@@ -35,6 +36,8 @@ export function FCRForm() {
   const [history, setHistory] = useState([])
   const [emails, setEmails] = useState([])
   const [showMinutes, setShowMinutes] = useState(false)
+  const [requests, setRequests] = useState([])
+  const [viber, setViber] = useState(null) // { number, message } after a Viber request is recorded
 
   useEffect(() => { fetchAccounts({ activeOnly: false }).then(setAccounts) }, [])
 
@@ -45,6 +48,7 @@ export function FCRForm() {
     setFcr({ ...data, form_data: normalizeFormData(t, data.form_data) })
     setDirty(false)
     supabase.from('email_log').select('created_at, recipient, result, error').eq('related_id', id).order('created_at', { ascending: false }).then(({ data: e }) => setEmails(e || []))
+    supabase.from('fcr_ack_requests').select('*').eq('fcr_id', id).order('sent_at', { ascending: false }).then(({ data: r }) => setRequests(r || []))
   }, [id, navigate])
 
   useEffect(() => {
@@ -52,7 +56,7 @@ export function FCRForm() {
     else setFcr({
       account_id: state?.accountId || '', visit_date: todayYmd(), period: new Date().getHours() < 12 ? 'AM' : 'PM',
       template_id: null, template_version: 1, form_data: null, customer_info: {},
-      attendee_name: '', attendee_designation: '', attendee_email: '', companion_id: null, companion2_id: null,
+      attendee_name: '', attendee_designation: '', attendee_email: '', attendee_mobile: '', attendee_mobile_owner: '', companion_id: null, companion2_id: null,
       status: 'draft', ack_status: 'not_sent', owner_id: user.id,
     })
   }, [id, state, user, load])
@@ -73,6 +77,7 @@ export function FCRForm() {
       attendee_name: f.attendee_name || account.contact_person || '',
       attendee_designation: f.attendee_designation || account.contact_designation || '',
       attendee_email: f.attendee_email || account.contact_email || '',
+      attendee_mobile: f.attendee_mobile || mobileFromContact(account.contact_no),
     }))
   }, [fcr, account])
 
@@ -114,6 +119,7 @@ export function FCRForm() {
       customer_info: customerInfo, form_data: fcr.form_data,
       attendee_name: fcr.attendee_name?.trim() || null, attendee_designation: fcr.attendee_designation?.trim() || null,
       attendee_email: fcr.attendee_email?.trim() || null,
+      attendee_mobile: fcr.attendee_mobile?.trim() || null, attendee_mobile_owner: fcr.attendee_mobile_owner?.trim() || null,
       companion_id: fcr.companion_id || null, companion2_id: fcr.companion2_id || null,
     }
     if (fcr.id) {
@@ -160,16 +166,42 @@ export function FCRForm() {
   }
 
   const sendEmail = async () => {
-    if (!fcr.attendee_email?.trim()) { setErrors({ attendee_email: 'Enter the attendee email, or use Copy link' }); return }
+    if (!fcr.attendee_email?.trim()) { setErrors({ attendee_email: 'Enter the attendee email, or send by Viber' }); return }
     setBusy('email')
     try {
       const fid = await ensureSaved()
       if (!fid) return
       const res = await invokeFunction('send-fcr-acknowledgment', { fcr_id: fid })
-      if (res?.ok) toast.success(`Sent to ${fcr.attendee_email}. If it doesn't arrive, use Copy link.`)
-      else toast.error(res?.error || 'Email not sent. Use Copy link instead.')
+      if (res?.ok) toast.success(`Sent to ${fcr.attendee_email}. If it doesn't arrive, send by Viber.`)
+      else toast.error(res?.error || 'Email not sent. Send by Viber instead.')
       if (fcr.id) await load()
     } catch (e) { toast.error(e.message) } finally { setBusy('') }
+  }
+
+  // Viber: the request (number + whose number it is) is recorded first, so the
+  // RSM sees where it went; then Viber opens on that number with the message
+  // ready to paste (Viber's links can't pre-fill text into a specific chat).
+  const sendViber = async () => {
+    const number = normalizePhMobile(fcr.attendee_mobile)
+    const owner = (fcr.attendee_mobile_owner || fcr.attendee_name || '').trim()
+    const e = {}
+    if (!number) e.attendee_mobile = 'Enter a mobile number, e.g. 0917 123 4567'
+    if (!owner) e.attendee_mobile_owner = 'Whose number is this?'
+    if (Object.keys(e).length) { setErrors(e); return }
+    setBusy('viber')
+    try {
+      if (!fcr.attendee_mobile_owner?.trim()) setFcr((f) => ({ ...f, attendee_mobile_owner: owner }))
+      const fid = await ensureSaved()
+      if (!fid) return
+      const token = await rpc('request_fcr_ack', { p_id: fid, p_channel: 'viber', p_recipient: number, p_recipient_name: owner })
+      const message = viberMessage({
+        attendeeName: fcr.attendee_name, kamName, company: customerInfo?.company_name,
+        visitDate: fcr.visit_date, period: fcr.period, link: ackLink(token),
+      })
+      try { await navigator.clipboard.writeText(message) } catch { /* shown in the dialog to copy by hand */ }
+      setViber({ number, owner, message })
+      if (fcr.id) await load()
+    } catch (err) { toast.error(err.message) } finally { setBusy('') }
   }
 
   const copyLink = async () => {
@@ -177,9 +209,9 @@ export function FCRForm() {
     try {
       const fid = await ensureSaved()
       if (!fid) return
-      const token = await rpc('ensure_fcr_ack_token', { p_id: fid })
+      const token = await rpc('request_fcr_ack', { p_id: fid, p_channel: 'link' })
       const url = ackLink(token)
-      try { await navigator.clipboard.writeText(url); toast.success('Link copied. Send it by Viber, WhatsApp or SMS.') }
+      try { await navigator.clipboard.writeText(url); toast.success('Link copied. Prefer "Send by Viber" so the number is on record for your RSM.') }
       catch { await prompt({ title: 'Acknowledgement link', body: 'Copy this link and send it to the customer.', initial: url, confirmLabel: 'Done' }) }
       if (fcr.id) await load()
     } catch (e) { toast.error(e.message) } finally { setBusy('') }
@@ -242,7 +274,7 @@ export function FCRForm() {
       )}
       {isDirectSuperior && fcr.status === 'pending_approval' && (
         <div className="mb-4 px-4 py-3 rounded border border-warn/30 bg-warn-soft flex flex-wrap items-center gap-3">
-          <p className="text-[13px] text-warn flex-1">Waiting for your approval. Acknowledged by {fcr.acknowledged_name} on {fmtDateTime(fcr.acknowledged_at)}.</p>
+          <p className="text-[13px] text-warn flex-1">Waiting for your approval. Acknowledged by {fcr.acknowledged_name} on {fmtDateTime(fcr.acknowledged_at)}.{fcr.ack_channel && <span className="block text-ink-2">{ackRequestLine(fcr)}</span>}</p>
           <button className="btn-danger" onClick={() => review(false)}><X size={14} /> Return</button>
           <button className="btn-ok" onClick={() => review(true)}><Check size={14} /> Approve</button>
         </div>
@@ -293,6 +325,14 @@ export function FCRForm() {
                 <Field label="Attendee email" error={errors.attendee_email}>
                   <input className="input" type="email" disabled={!editable} value={fcr.attendee_email || ''} onChange={(e) => update({ attendee_email: e.target.value })} />
                 </Field>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Viber number" error={errors.attendee_mobile}>
+                    <input className="input" inputMode="tel" placeholder="0917 123 4567" disabled={!editable} value={fcr.attendee_mobile || ''} onChange={(e) => update({ attendee_mobile: e.target.value })} />
+                  </Field>
+                  <Field label="Number owner" error={errors.attendee_mobile_owner}>
+                    <input className="input" placeholder={fcr.attendee_name || 'Name'} disabled={!editable} value={fcr.attendee_mobile_owner || ''} onChange={(e) => update({ attendee_mobile_owner: e.target.value })} />
+                  </Field>
+                </div>
 
                 {fcr.ack_status === 'acknowledged' ? (
                   <div className="rounded border border-ok/30 bg-ok-soft px-3 py-2 text-[13px] text-ok">
@@ -305,10 +345,16 @@ export function FCRForm() {
                 ) : null}
 
                 {editable && fcr.ack_status !== 'acknowledged' && (
-                  <div className="flex flex-wrap gap-2">
-                    <button className="btn-primary" onClick={sendEmail} disabled={Boolean(busy)}><Mail size={14} /> {fcr.ack_status === 'pending' ? 'Resend email' : 'Send for acknowledgement'}</button>
-                    <button className="btn-secondary" onClick={copyLink} disabled={Boolean(busy)} title="For customers whose company email filters block us"><Link2 size={14} /> Copy link</button>
-                    {fcr.ack_status === 'pending' && <button className="btn-ghost" onClick={load}><RefreshCw size={14} /> Refresh</button>}
+                  <div className="space-y-2">
+                    <p className="text-2xs font-semibold uppercase tracking-[0.05em] text-ink-3">{fcr.ack_status === 'pending' ? 'Send again' : 'Send for acknowledgement'}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button className="btn-primary justify-center" onClick={sendEmail} disabled={Boolean(busy)}><Mail size={14} /> By email</button>
+                      <button className="btn-primary justify-center" onClick={sendViber} disabled={Boolean(busy)}><MessageCircle size={14} /> By Viber</button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button className="btn-ghost" onClick={copyLink} disabled={Boolean(busy)} title="Other apps. The recipient is not recorded."><Link2 size={14} /> Copy link only</button>
+                      {fcr.ack_status === 'pending' && <button className="btn-ghost" onClick={load}><RefreshCw size={14} /> Refresh</button>}
+                    </div>
                   </div>
                 )}
                 {editable && fcr.ack_status === 'acknowledged' && ['draft', 'rejected'].includes(fcr.status) && (
@@ -316,9 +362,21 @@ export function FCRForm() {
                 )}
                 <button className="btn-ghost w-full" onClick={() => setShowMinutes(true)}><Eye size={14} /> Preview minutes the customer will see</button>
                 <p className="text-2xs text-ink-4 leading-relaxed">When the customer confirms, the FCR goes to {byId[owner?.supervisor_id]?.full_name || 'your direct superior'} for approval automatically.</p>
+                {requests.length > 0 && (
+                  <div className="pt-2 border-t border-line">
+                    <p className="text-2xs font-semibold uppercase tracking-[0.05em] text-ink-3 mb-1">Where the request went</p>
+                    {requests.map((r) => (
+                      <p key={r.id} className="text-[12px] text-ink-2 leading-snug py-0.5">
+                        <span className="font-medium text-ink">{ACK_CHANNEL_LABELS[r.channel]}</span>
+                        {r.recipient && <> · {r.recipient}</>}{r.recipient_name && <> ({r.recipient_name})</>}
+                        <span className="block text-ink-4">{fmtDateTime(r.sent_at)} · by {byId[r.sent_by]?.full_name || 'KAM'}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {emails.length > 0 && (
                   <div className="pt-2 border-t border-line">
-                    <p className="text-2xs font-semibold uppercase tracking-[0.05em] text-ink-3 mb-1">Email history</p>
+                    <p className="text-2xs font-semibold uppercase tracking-[0.05em] text-ink-3 mb-1">Email delivery</p>
                     {emails.map((e, i) => (
                       <p key={i} className="text-[12px] text-ink-2"><span className={e.result === 'sent' ? 'text-ok' : 'text-bad'}>{e.result}</span> · {e.recipient} · {fmtDateTime(e.created_at)}{e.error ? ` · ${e.error}` : ''}</p>
                     ))}
@@ -359,9 +417,25 @@ export function FCRForm() {
         <div className="sticky bottom-0 mt-5 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 bg-white/95 backdrop-blur border-t border-line flex items-center gap-2 print:hidden">
           <span className="text-[12px] text-ink-3">{dirty ? 'Unsaved changes' : fcr.id ? 'All changes saved' : 'Not saved yet'}</span>
           <button className="btn-secondary ml-auto" onClick={save} disabled={Boolean(busy)}><Save size={14} /> Save draft</button>
-          {fcr.ack_status !== 'acknowledged' && <button className="btn-primary" onClick={sendEmail} disabled={Boolean(busy)}><Mail size={14} /> Save and send for acknowledgement</button>}
+          {fcr.ack_status !== 'acknowledged' && <>
+            <button className="btn-primary" onClick={sendEmail} disabled={Boolean(busy)}><Mail size={14} /> Send by email</button>
+            <button className="btn-primary" onClick={sendViber} disabled={Boolean(busy)}><MessageCircle size={14} /> Send by Viber</button>
+          </>}
         </div>
       )}
+
+      <Modal open={Boolean(viber)} onClose={() => setViber(null)} title="Send by Viber" width="max-w-lg"
+        footer={viber && <>
+          <button className="btn-secondary mr-auto" onClick={async () => { try { await navigator.clipboard.writeText(viber.message); toast.success('Message copied') } catch { toast.error('Select the message and copy it') } }}><Copy size={14} /> Copy message</button>
+          <a className="btn-secondary" href={viberForwardUrl(viber.message)}>Pick contact in Viber</a>
+          <a className="btn-primary" href={viberChatUrl(viber.number)}><MessageCircle size={14} /> Open chat with {viber.number}</a>
+        </>}>
+        {viber && <>
+          <p className="text-[13px] text-ink-2 mb-3">Recorded for your RSM: <strong className="text-ink">Viber to {viber.number} ({viber.owner})</strong>. The message is copied. Open the chat and paste it.</p>
+          <textarea className="input font-mono text-[12px] h-36" readOnly value={viber.message} onFocus={(e) => e.target.select()} />
+          <p className="text-2xs text-ink-4 mt-2">Send it to the number above, so the record matches. If Viber does not open on this device, copy the message and send it from your phone.</p>
+        </>}
+      </Modal>
 
       <Modal open={showMinutes} onClose={() => setShowMinutes(false)} title="Minutes of the Meeting" width="max-w-2xl"
         footer={<button className="btn-secondary" onClick={() => setShowMinutes(false)}>Close</button>}>

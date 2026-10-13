@@ -82,7 +82,15 @@ Deno.serve(async (req) => {
       triggeredBy: userData.user.id,
     });
 
-    if (res.result === "sent") return json({ ok: true, result: "sent" });
+    if (res.result === "sent") {
+      // Record the request in the FCR's audit trail (channel, address, name),
+      // as the KAM, so the RSM and the PDF show where it went.
+      const { error: logErr } = await userClient.rpc("request_fcr_ack", {
+        p_id: fcr_id, p_channel: "email", p_recipient: fcr.attendee_email, p_recipient_name: fcr.attendee_name,
+      });
+      if (logErr) console.error("request_fcr_ack", logErr.message);
+      return json({ ok: true, result: "sent" });
+    }
     if (res.result === "skipped") {
       return json({ ok: false, error: "Email is not configured yet (GMAIL secrets missing). Use Copy link instead.", link }, 200);
     }

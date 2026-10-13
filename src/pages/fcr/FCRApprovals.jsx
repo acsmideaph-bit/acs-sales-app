@@ -11,6 +11,7 @@ import { buildMinutes } from '../../lib/fcrMinutes'
 import { MinutesView } from '../../components/MinutesView'
 import { PageHeader, Spinner, Empty, Modal, prompt } from '../../components/ui'
 import { notifyPendingChanged } from '../../components/Layout'
+import { ackRequestLine } from '../../lib/ack'
 
 // Acknowledged FCRs from the signed-in superior's direct reports. Approval is
 // enforced in the database (review_fcr checks supervisor_id).
@@ -71,7 +72,7 @@ export function FCRApprovals() {
                     <td className="tabular-nums whitespace-nowrap">{fmt(f.visit_date)} <span className="text-ink-4">{f.period}</span></td>
                     <td>{byId[f.owner_id]?.full_name}</td>
                     <td className="font-medium"><button className="hover:underline text-left" onClick={() => navigate(`/fcr/${f.id}`)}>{f.customer_info?.company_name}</button></td>
-                    <td className="text-ink-2">{f.acknowledged_name}<span className="block text-2xs text-ink-4">{fmtDateTime(f.acknowledged_at)}</span></td>
+                    <td className="text-ink-2">{f.acknowledged_name}<span className="block text-2xs text-ink-4">{fmtDateTime(f.acknowledged_at)}</span>{f.ack_channel && <span className="block text-2xs text-ink-3">{ackRequestLine(f).replace(/ on .*$/, '')}</span>}</td>
                     <td className="text-ink-2 max-w-[260px] truncate">{f.form_data?.get_back_items}</td>
                     <td className="whitespace-nowrap text-right">
                       <button className="btn-ghost" onClick={() => setPreview(f)}><Eye size={14} /> Review</button>
@@ -93,6 +94,7 @@ export function FCRApprovals() {
         </>}>
         {preview && <>
           <MinutesView minutes={minutesOf(preview)} />
+          <p className="mt-4 px-3 py-2 rounded bg-canvas text-[13px]"><span className="text-ink-3">Acknowledgement: </span>Confirmed by {preview.acknowledged_name} on {fmtDateTime(preview.acknowledged_at)}.{preview.ack_channel && <span className="block text-ink-2">{ackRequestLine(preview)}</span>}</p>
           {preview.acknowledged_comment && <p className="mt-4 px-3 py-2 rounded bg-canvas text-[13px]"><span className="text-ink-3">Customer comment: </span>{preview.acknowledged_comment}</p>}
         </>}
       </Modal>

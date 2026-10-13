@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { ackRequestLine } from './ack'
 import autoTable from 'jspdf-autotable'
 import logoUrl from './cmip-logo.jpg'
 import { fmt, fmtDateTime } from './dates'
@@ -146,7 +147,7 @@ export async function renderFcr(doc, { fcr, submitterName, submitterPosition, re
   y = doc.lastAutoTable.finalY + 10
 
   const ackText = fcr.ack_status === 'acknowledged'
-    ? `Confirmed electronically by ${fcr.acknowledged_name} on ${fmtDateTime(fcr.acknowledged_at)}${fcr.acknowledged_comment ? `\nCustomer comment: ${fcr.acknowledged_comment}` : ''}`
+    ? `Confirmed electronically by ${fcr.acknowledged_name} on ${fmtDateTime(fcr.acknowledged_at)}${fcr.ack_channel ? `\nRequest: ${ackRequestLine(fcr)}` : ''}${fcr.acknowledged_comment ? `\nCustomer comment: ${fcr.acknowledged_comment}` : ''}`
     : `Customer acknowledgement: ${ACK_LABELS[fcr.ack_status] || fcr.ack_status}`
   autoTable(doc, {
     ...tableStyles, startY: y,

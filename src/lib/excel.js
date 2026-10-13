@@ -2,6 +2,7 @@ import XLSX from 'xlsx-js-style'
 import { fmt, fmtDateTime } from './dates'
 import { templateFor, filledRows, num, normalizeFormData } from './fcrTemplates'
 import { STATUS_LABELS } from './roles'
+import { ACK_CHANNEL_LABELS } from './ack'
 
 // Styled Excel exports. One build*Sheet() per tab, plain computed values (not
 // live formulas) because every export is regenerated fresh from the database.
@@ -96,6 +97,9 @@ export function buildExportWorkbook({ fcrs, archives = [], from, to, scopeLabel 
     { header: 'Attendee', width: 20, value: (f) => [f.attendee_name, f.attendee_designation].filter(Boolean).join(', ') },
     { header: 'Acknowledged by', width: 20, value: (f) => f.acknowledged_name },
     { header: 'Acknowledged at', width: 17, value: (f) => fmtDateTime(f.acknowledged_at) },
+    { header: 'Request sent via', width: 12, value: (f) => ACK_CHANNEL_LABELS[f.ack_channel] || '' },
+    { header: 'Sent to', width: 24, value: (f) => f.ack_recipient },
+    { header: 'Number/email owner', width: 20, value: (f) => f.ack_recipient_name },
     { header: 'Status', width: 14, value: (f) => STATUS_LABELS[f.status] },
     { header: 'Reviewed by', width: 20, value: (f) => f.reviewer_name },
     { header: 'Review comment', width: 30, value: (f) => f.review_comment },
