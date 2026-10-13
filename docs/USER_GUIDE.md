@@ -1,0 +1,56 @@
+# ACS Sales Operations – User guide
+
+## The process
+
+```mermaid
+flowchart LR
+  A[KAM: plan the month<br>MCP Plan] -->|Submit| B{RSM approves?}
+  B -->|Return with comment| A
+  B -->|Approve| C[KAM visits the account]
+  C --> D[KAM files FCR<br>ACS or Sub Dealer form]
+  D -->|Send email or Copy link| E[Customer reviews minutes<br>and confirms - no login]
+  E -->|Automatic| F{RSM approves FCR?}
+  F -->|Return| D
+  F -->|Approve| G[Counts in MCP Actual]
+  G --> H[Friday 3 PM digest<br>Monthly digest on the 1st]
+```
+
+## Key Account Managers (KAM)
+
+**Before the month**
+1. *MCP Plan* → **Plan [next month]**. Click a day's **+** to add a visit (account, AM/PM, purpose). *Copy last month* gives you a starting point.
+2. **Submit for approval**. If your RSM returns it, the comment shows at the top; fix and submit again. Need to change an approved plan? **Revise** (it goes back for approval).
+
+**After every visit**
+1. *Field Contact Reports* → **New FCR** → pick the account. The form (ACS or Sub Dealer) follows the account type; the header fills from the account profile.
+2. Fill the sections you covered. Get-Back Items and Coverage Notes are what the customer will read most closely. *Preview minutes* shows exactly what they will see.
+3. Enter the **attendee name** (required) and email, then **Save and send for acknowledgement**.
+   - If the customer's company blocks our email, use **Copy link** and send it by Viber, WhatsApp or SMS.
+4. When the customer clicks **Confirm**, the FCR goes to your RSM automatically. The dashboard shows anything still waiting.
+5. If the RSM returns it, correct it and send for acknowledgement again (changing the report after the customer confirmed means they must confirm the new version).
+
+**Notes**
+- The visit date locks once you request acknowledgement, and can't be in the future.
+- *MCP Actual* shows approved visits (green), planned visits still upcoming (blue) and planned visits with no approved FCR (red). Add a **day note** for leave, office days or trainings. **Generate and export PDF** saves a snapshot to the MCP Archive.
+- *Joint visit*: name up to two companions; they can view the FCR and don't file their own.
+
+## Regional Sales Managers (RSM)
+
+- Sidebar badges show what's waiting. **FCR approvals**: *Review* shows the confirmed minutes; **Approve** or **Return** (a comment is required to return). You can tick several and approve together.
+- **MCP Plan approvals**: expand to see the calendar, then approve or return.
+- *Dashboard → Team overview* shows each KAM's week (drafts, awaiting customer, pending, approved, returned) and MCP Plan / Actual for the month. Click a KAM to open their MCP Actual.
+- *Weekly report* = the Friday email, any week, with **Download PDFs (.zip)**. *Visitation census* shows weekly counts with zero weeks in red. *Export center* gives Excel, one combined PDF, or a zip for any period.
+
+## Channel Head and Director
+
+Same reports for your whole branch, grouped by RSM. You receive the Friday and monthly roll-up digests. Approvals stay with each KAM's RSM.
+
+## Admins
+
+- *Users and org chart*: edit the roster (role, team, **Reports to**, digest email) → **Save and sync**. Click a user's access chip to make them read-only. New people also need a login (see docs/SETUP.md step 4).
+- *Email log*: every email attempt. **Preview weekly/monthly** and **Test weekly to me** before launch and after any change.
+
+## Everyone
+
+- *Account* (bottom left): change your password; set a different address for report emails.
+- Accounts are shared across the team. Search **All** before creating one, to avoid duplicates.

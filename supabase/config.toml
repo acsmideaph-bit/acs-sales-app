@@ -1,0 +1,16 @@
+# Supabase CLI config (used by `supabase functions deploy`).
+# project_id is the local name only; link the real project with
+#   supabase link --project-ref <ACS_PROJECT_REF>
+project_id = "acs-sales-app"
+
+# The ack email is called by a signed-in KAM -> keep JWT verification on.
+[functions.send-fcr-acknowledgment]
+verify_jwt = true
+
+# Digests are called by pg_cron with an x-cron-secret header (no user JWT), or
+# by an admin from the Email Log page. The functions check both themselves.
+[functions.weekly-digest]
+verify_jwt = false
+
+[functions.monthly-digest]
+verify_jwt = false

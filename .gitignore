@@ -1,0 +1,24 @@
+node_modules
+dist
+dist-*
+.env
+.env.*
+!.env.example
+!.env.production
+.DS_Store
+*.log
+acs-temporary-passwords-*.csv
+supabase/.temp
+supabase/.branches
+# Source material from ACS (internal: roster workbook, org chart, sample forms).
+# Keep out of a PUBLIC repo -- GitHub Pages on the free plan needs a public repo.
+/*.xlsx
+/*.pptx
+/*.pdf
+# The real roster seed lists staff names and company emails. Keep it local
+# (run it in the Supabase SQL editor) unless the repo is private.
+supabase/seed/org_roster.sql
+# Also name ACS staff (org chart decisions, test fixtures). Kept locally and in
+# the Claude Project; not published in the public repo.
+docs/INTERPRETATION.md
+supabase/tests/01_workflow_rls_smoke.sql
