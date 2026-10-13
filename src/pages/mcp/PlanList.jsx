@@ -31,7 +31,7 @@ export function PlanList() {
 
   return (
     <>
-      <PageHeader title="MCP Plan" subtitle="Monthly call plan: schedule visits by day and AM/PM, then submit to your direct superior."
+      <PageHeader title="MCP Plan" subtitle={canFile ? 'Monthly call plan: schedule visits by day and AM/PM, then submit to your direct superior.' : 'Monthly call plans filed by the KAMs in your team. Each KAM\'s RSM approves them.'}
         actions={canFile && <>
           <button className="btn-secondary" onClick={() => navigate('/mcp/plan/new', { state: { month: thisM } })}><Plus size={15} /> {fmt(thisM, 'MMMM')}</button>
           <button className="btn-primary" onClick={() => navigate('/mcp/plan/new', { state: { month: next } })}><Plus size={15} /> Plan {fmt(next, 'MMMM')}</button>
@@ -64,7 +64,7 @@ export function PlanList() {
           </div>
         )}
       </div>
-      {!canFile && <p className="text-[12px] text-ink-3 mt-3">Read-only access. <Link className="text-accent" to="/mcp/actual">MCP Actual</Link> shows visits completed.</p>}
+      {!canFile && <p className="text-[12px] text-ink-3 mt-3">Plans are filed by KAMs. <Link className="text-accent" to="/mcp/actual">MCP Actual</Link> shows the visits completed against them.</p>}
     </>
   )
 }
