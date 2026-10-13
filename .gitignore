@@ -22,3 +22,4 @@ supabase/seed/org_roster.sql
 # the Claude Project; not published in the public repo.
 docs/INTERPRETATION.md
 supabase/tests/01_workflow_rls_smoke.sql
+supabase/tests/02_live_workflow_rollback.sql

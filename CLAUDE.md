@@ -15,7 +15,9 @@ to the wrong project before.
 - **Approval routing is data, not code.** `user_profiles.supervisor_id`
   (from `org_roster.supervisor_email`) decides who approves whom. Only the
   DIRECT superior approves (`review_fcr`, `review_itinerary`). Everyone above
-  sees the whole branch (`is_above`, `my_branch`).
+  sees the whole branch (`is_above`, `my_branch`). **Only KAMs file**
+  FCRs and MCP Plans (`fcrs_insert`/`itin_insert` policies, `canFile`), so
+  in practice only RSMs approve.
 - **Workflow fields move only through RPCs.** Status, acknowledgement and
   review columns are protected by the `guard_fcr` / `guard_itinerary`
   triggers. Client UPDATEs can only change content. Add new transitions as

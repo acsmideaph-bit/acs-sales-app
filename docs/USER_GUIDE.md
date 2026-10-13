@@ -36,6 +36,7 @@ flowchart LR
 
 ## Regional Sales Managers (RSM)
 
+- You approve your KAMs' FCRs and MCP Plans. RSMs do not file FCRs or MCP Plans of their own.
 - Sidebar badges show what's waiting. **FCR approvals**: *Review* shows the confirmed minutes; **Approve** or **Return** (a comment is required to return). You can tick several and approve together.
 - **MCP Plan approvals**: expand to see the calendar, then approve or return.
 - *Dashboard → Team overview* shows each KAM's week (drafts, awaiting customer, pending, approved, returned) and MCP Plan / Actual for the month. Click a KAM to open their MCP Actual.
@@ -43,7 +44,7 @@ flowchart LR
 
 ## Channel Head and Director
 
-Same reports for your whole branch, grouped by RSM. You receive the Friday and monthly roll-up digests. Approvals stay with each KAM's RSM.
+Same reports for your whole branch, grouped by RSM. You receive the Friday and monthly roll-up digests. You don't file FCRs or MCP Plans and have no approval queue: only KAMs file, and each KAM's RSM approves.
 
 ## Admins
 

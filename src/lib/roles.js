@@ -27,8 +27,11 @@ export const ACK_LABELS = {
 export const canWrite = (profile) =>
   Boolean(profile && profile.active && !profile.read_only && profile.role !== 'viewer')
 
-// People who file visits. Superiors can also file their own FCRs if they visit.
-export const canFile = (profile) => canWrite(profile) && profile.role !== 'admin'
+// Only KAMs file FCRs and MCP Plans (confirmed by Ronald, Oct 14, 2026: RSMs
+// do not submit to the Channel Head, and the Channel Head does not submit to
+// the Director). The database enforces the same rule (fcrs_insert,
+// itin_insert policies).
+export const canFile = (profile) => canWrite(profile) && profile.role === 'kam'
 
 export const isGlobalReader = (profile) => ['admin', 'viewer'].includes(profile?.role)
 

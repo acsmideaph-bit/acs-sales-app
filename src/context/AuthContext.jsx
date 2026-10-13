@@ -9,17 +9,19 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [hasReports, setHasReports] = useState(false)
+  const [hasKamReports, setHasKamReports] = useState(false)
   const [loading, setLoading] = useState(true)
   const [recovery, setRecovery] = useState(false)
 
   const loadProfile = useCallback(async (userId) => {
-    if (!userId) { setProfile(null); setHasReports(false); return }
-    const [{ data: p }, { count }] = await Promise.all([
+    if (!userId) { setProfile(null); setHasReports(false); setHasKamReports(false); return }
+    const [{ data: p }, { data: reports }] = await Promise.all([
       supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle(),
-      supabase.from('user_profiles').select('id', { count: 'exact', head: true }).eq('supervisor_id', userId).eq('active', true),
+      supabase.from('user_profiles').select('id, role').eq('supervisor_id', userId).eq('active', true),
     ])
     setProfile(p || null)
-    setHasReports((count || 0) > 0)
+    setHasReports((reports || []).length > 0)
+    setHasKamReports((reports || []).some((r) => r.role === 'kam'))
   }, [])
 
   useEffect(() => {
@@ -42,8 +44,10 @@ export function AuthProvider({ children }) {
     user: session?.user || null,
     profile,
     loading,
-    // An "approver" is anyone with direct reports in the org chart.
-    isApprover: hasReports && canWrite(profile),
+    // An "approver" has KAMs reporting directly to them (the RSMs). The
+    // Channel Head and Director have reports but nothing to approve, since
+    // only KAMs file.
+    isApprover: hasKamReports && canWrite(profile),
     hasTeam: hasReports || isGlobalReader(profile),
     canWrite: canWrite(profile),
     canFile: canFile(profile),
