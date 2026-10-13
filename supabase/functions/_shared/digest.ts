@@ -3,7 +3,8 @@
 // Recipients come from the org chart in the data: everyone who has at least
 // one active direct report gets a digest of THEIR WHOLE BRANCH, grouped by
 // each KAM's direct superior. So an RSM sees their KAMs; the Channel Head and
-// Director get the roll-up across RSMs. Mail goes to notify_email, falling
+// Director get the roll-up across RSMs. Active admins get the same whole-org
+// roll-up as the Director. Mail goes to notify_email, falling
 // back to the login email.
 import {
   APP_URL, BRAND, Profile, admin, branchOf, escapeHtml, fmtLong, loadProfiles, resolveCaller, json, sendMail, shell,
@@ -98,18 +99,27 @@ export async function runDigest(req: Request, opts: {
 
   const r = opts.range();
   const profiles = await loadProfiles();
-  const recipients = profiles.filter((p) => profiles.some((x) => x.supervisor_id === p.id));
+  // Leaders (anyone with direct reports) get their branch. Admins get the
+  // whole ACS line, the same view as the Director (confirmed by Ronald,
+  // Oct 13, 2026: admins have maximum access, at least equal to the leaders).
+  const leaders = profiles.filter((p) => profiles.some((x) => x.supervisor_id === p.id));
+  const orgAdmins = profiles.filter((p) => p.role === "admin" && !leaders.includes(p));
+  const recipients = [...leaders, ...orgAdmins];
+  const wholeOrg = (selfId: string) => profiles
+    .filter((p) => p.role !== "admin" && p.role !== "viewer" && p.id !== selfId)
+    .sort((a, b) => (a.team || "").localeCompare(b.team || "") || a.full_name.localeCompare(b.full_name));
   const results: unknown[] = [];
   const previews: { to: string; subject: string; html: string }[] = [];
 
   for (const rec of recipients) {
-    const branch = branchOf(rec.id, profiles);
+    const isOrgAdmin = orgAdmins.includes(rec);
+    const branch = isOrgAdmin ? wholeOrg(rec.id) : branchOf(rec.id, profiles);
     const fcrs = await approvedFcrs(branch.map((b) => b.id), r.start, r.end);
     const planned = opts.kind === "monthly_digest" ? await plannedCounts(branch.map((b) => b.id), r.monthStart || null) : null;
     const pending = await pendingForApprover(rec.id, profiles);
     const { html: branchHtml, text: branchText } = renderBranch(rec, branch, fcrs, planned, profiles);
     const link = `${APP_URL}#${opts.linkPath(r)}`;
-    const subject = `${opts.title(r)} - ${rec.team || rec.full_name}`;
+    const subject = `${opts.title(r)} - ${isOrgAdmin ? "All ACS" : rec.team || rec.full_name}`;
     const pendingLine = pending.fcr || pending.plan
       ? `<p style="font-size:13px;background:#fff8e6;border:1px solid #f5d48a;padding:8px 12px;border-radius:6px;">Waiting for your approval: <strong>${pending.fcr}</strong> FCR${pending.fcr === 1 ? "" : "s"} and <strong>${pending.plan}</strong> MCP Plan${pending.plan === 1 ? "" : "s"}. <a href="${APP_URL}#/fcr/approvals" style="color:${BRAND};">Open approvals</a></p>`
       : "";
