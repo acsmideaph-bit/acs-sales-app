@@ -141,6 +141,7 @@ export function photoFacts(photo) {
   if (photo.place_label) out.push(`Place: ${photo.place_label}`)
   if (photo.device) out.push(`Device: ${photo.device}${photo.source === 'live_camera' ? ' (in-app camera)' : ''}`)
   if (photo.exif_lat != null) out.push(`Photo GPS: ${photo.exif_lat.toFixed(5)}, ${photo.exif_lng.toFixed(5)}`)
+  if (photo.customer_confirmed_at) out.push(`Customer: confirmed with this photo shown, ${fmtDateTime(photo.customer_confirmed_at)}`)
   if (photo.purged_at) out.push(`Photo file deleted ${fmtDateTime(photo.purged_at)} (${PHOTO_RETENTION_DAYS}-day retention); details kept`)
   return out
 }

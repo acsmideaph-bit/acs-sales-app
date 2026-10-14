@@ -30,7 +30,7 @@ to the wrong project before.
   file. Never change the live database by hand without committing the SQL.
 - **Free tier only.** Flag anything that would need a paid component.
 
-- **Visit photo is evidence.** One per FCR (`fcr_photos`, private bucket `fcr-photos`, path `<owner>/<fcr>/<uuid>.jpg`), attached only through `attach_fcr_photo`, required by `ensure_fcr_ack_token`, locked once the request is out. Files purge after 60 days (`purge-fcr-photos`, cron `acs-purge-fcr-photos`); keep the metadata. Don't add location-distance flags (Ronald, Oct 14, 2026). Photos come only from the in-app live camera on a phone (`CameraCapture`; laptops hand off by QR in `VisitPhoto`), never a file input; `attach_fcr_photo` rejects a photo without location. FCR saves are guarded by `updated_at` (stale copy on another device can't overwrite).
+- **Visit photo is evidence.** One per FCR (`fcr_photos`, private bucket `fcr-photos`, path `<owner>/<fcr>/<uuid>.jpg`), attached only through `attach_fcr_photo`, required by `ensure_fcr_ack_token`, locked once the request is out. Files purge after 60 days (`purge-fcr-photos`, cron `acs-purge-fcr-photos`); keep the metadata. Don't add location-distance flags (Ronald, Oct 14, 2026). Photos come only from the in-app live camera on a phone (`CameraCapture`; laptops hand off by QR in `VisitPhoto`), never a file input; `attach_fcr_photo` rejects a photo without location. FCR saves are guarded by `updated_at` (stale copy on another device can't overwrite). The customer sees the photo on the ack page through the `ack-photo` Edge Function (10-minute signed URL, live token only, verify_jwt off); never make the bucket public.
 
 ## Conventions
 

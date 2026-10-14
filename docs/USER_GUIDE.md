@@ -30,7 +30,7 @@ flowchart LR
    - **By email**: enter the attendee's email address.
    - **By Viber**: enter the **Viber number** and the **number owner** (whose number it is). The app records the request, copies a ready-made message and opens a Viber chat with that number. Paste and send. Send it to that same number so the record matches.
    - Both are recorded under *Where the request went* (channel, number or address, owner, time). Your RSM sees this on the FCR, in the approval queue and in the PDF. **Copy link only** is for other apps; it does not record a recipient, so prefer Viber or email.
-5. When the customer clicks **Confirm**, the FCR goes to your RSM automatically. The dashboard shows anything still waiting.
+5. The customer sees the minutes **and the visit photo** on the link, and confirms both with **Confirm the minutes and photo**. The FCR then goes to your RSM automatically. The dashboard shows anything still waiting.
 6. If the RSM returns it, correct it and send for acknowledgement again (changing the report after the customer confirmed means they must confirm the new version).
 
 **Notes**
@@ -42,6 +42,7 @@ flowchart LR
 
 - You approve your KAMs' FCRs and MCP Plans. RSMs do not file FCRs or MCP Plans of their own.
 - Sidebar badges show what's waiting. **FCR approvals**: *Review* shows the confirmed minutes, who confirmed and when, and where the request was sent (e.g. *Sent via Viber to +63917… (Juan Cruz)*); **Approve** or **Return** (a comment is required to return). You can tick several and approve together.
+- The customer confirms the minutes with the visit photo shown; the photo panel says **Customer: Confirmed with this photo shown** and the date.
 - Each FCR shows the **visit photo** with its time, the place and a map link. Meetings away from the customer's office (meals, other venues) are normal, so the app does not flag distance; you judge. It only flags a photo dated on a different day than the visit, or a missing location. Photo files are deleted after 60 days; the time, place and map link stay.
 - Check that the number or address belongs to the customer named in the FCR. The app records what the KAM entered; it cannot read the Viber conversation itself.
 - **MCP Plan approvals**: expand to see the calendar, then approve or return.

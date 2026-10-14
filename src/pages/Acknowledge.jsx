@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { CheckCircle2, AlertCircle } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Camera, MapPin } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { templateFor, normalizeFormData } from '../lib/fcrTemplates'
 import { buildMinutes } from '../lib/fcrMinutes'
@@ -20,6 +20,7 @@ export function Acknowledge() {
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [photo, setPhoto] = useState(null) // { url?, taken_at, place, purged? }
 
   useEffect(() => {
     supabase.rpc('get_fcr_ack_details', { p_token: token }).then(({ data, error: e }) => {
@@ -28,6 +29,11 @@ export function Acknowledge() {
       setD(row); setName(row.attendee_name || ''); setEditName(!row.attendee_name)
       setState(row.ack_status === 'acknowledged' ? 'done' : 'ready')
     })
+    // The meeting photo comes from the ack-photo function (short-lived signed
+    // URL, token-checked). If it can't load, the page still works without it.
+    supabase.functions.invoke('ack-photo', { body: { token } })
+      .then(({ data }) => { if (data?.ok && data.photo) setPhoto(data.photo) })
+      .catch(() => {})
   }, [token])
 
   const confirmIt = async () => {
@@ -76,6 +82,20 @@ export function Acknowledge() {
         <p className="text-[13px] text-ink-3 mt-1">Please review the minutes of your meeting with {d.submitter_name}. If they are accurate, confirm below. No login is needed.</p>
       </div>
       <div className="px-5 sm:px-6 py-5"><MinutesView minutes={minutes} /></div>
+      {photo && (
+        <div className="px-5 sm:px-6 pb-5">
+          <p className="text-2xs font-semibold uppercase tracking-[0.05em] text-ink-3 mb-2 flex items-center gap-1.5"><Camera size={12} /> Photo from the meeting</p>
+          {photo.purged ? (
+            <p className="text-[13px] text-ink-3">The photo was deleted after 60 days, as scheduled.</p>
+          ) : (
+            <a href={photo.url} target="_blank" rel="noreferrer"><img src={photo.url} alt="Photo taken during the meeting" className="w-full rounded border border-line object-contain max-h-96 bg-canvas" /></a>
+          )}
+          <p className="text-[12px] text-ink-3 mt-2 flex items-start gap-1">
+            <MapPin size={12} className="mt-0.5 shrink-0" />
+            <span>{fmtDateTime(photo.taken_at)}{photo.place ? ` · ${photo.place}` : ''}</span>
+          </p>
+        </div>
+      )}
       <div className="px-5 sm:px-6 py-5 border-t border-line bg-canvas/60 rounded-b-md">
         {state === 'done' ? (
           <div className="flex gap-3">
@@ -98,8 +118,8 @@ export function Acknowledge() {
               <textarea id="ack-comment" className="input min-h-[80px] text-[14px]" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Anything to add or correct?" />
             </div>
             {error && <p className="text-[13px] text-bad">{error}</p>}
-            <button className="btn-primary w-full h-11 text-[15px]" disabled={!name.trim() || busy} onClick={confirmIt}>{busy ? 'Confirming…' : 'Confirm these minutes'}</button>
-            <p className="text-2xs text-ink-4 text-center">Your name, the time and any comment are recorded with the report. A photo taken during the meeting is kept with Concepcion Midea's internal record of this visit for 60 days.</p>
+            <button className="btn-primary w-full h-11 text-[15px]" disabled={!name.trim() || busy} onClick={confirmIt}>{busy ? 'Confirming…' : photo && !photo.purged ? 'Confirm the minutes and photo' : 'Confirm these minutes'}</button>
+            <p className="text-2xs text-ink-4 text-center">Your name, the time and any comment are recorded with the report.{photo && !photo.purged ? ' By confirming, you also confirm the photo above was taken at this meeting.' : ''} The meeting photo is kept with Concepcion Midea's internal record of this visit for 60 days.</p>
           </div>
         )}
       </div>

@@ -116,6 +116,7 @@ export function VisitPhoto({ photo, visitDate, canChange, error, who, fcrId, onE
                 </a>
               ) : <span className="text-ink-3">Not shared</span>}</dd>
               {photo.device && <><dt className="text-ink-3">Device</dt><dd>{photo.device}{photo.source === 'live_camera' ? <span className="text-ink-4"> · in-app camera</span> : null}</dd></>}
+              {photo.customer_confirmed_at && <><dt className="text-ink-3">Customer</dt><dd className="text-ok">Confirmed with this photo shown · {fmtDateTime(photo.customer_confirmed_at)}</dd></>}
               {photo.exif_lat != null && <><dt className="text-ink-3">Photo GPS</dt><dd><a className="text-accent" href={mapsUrl(photo.exif_lat, photo.exif_lng)} target="_blank" rel="noreferrer">{photo.exif_lat.toFixed(5)}, {photo.exif_lng.toFixed(5)}</a></dd></>}
             </dl>
 
