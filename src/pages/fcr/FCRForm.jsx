@@ -17,7 +17,7 @@ import { downloadFcrPdf } from '../../lib/lazy'
 import { FCRFormBody, CustomerInfo } from './FCRFormBody'
 import { MinutesView } from '../../components/MinutesView'
 import { VisitPhoto } from '../../components/VisitPhoto'
-import { uploadVisitPhoto } from '../../lib/photo'
+import { uploadCapturedPhoto } from '../../lib/photo'
 import { PageHeader, Spinner, StatusChip, AckChip, Field, Segmented, Modal, confirm, prompt } from '../../components/ui'
 import { notifyPendingChanged } from '../../components/Layout'
 import {
@@ -26,7 +26,15 @@ import {
 
 export function FCRForm() {
   const { id } = useParams()
-  const { state } = useLocation()
+  const { state, search } = useLocation()
+  const photoStep = new URLSearchParams(search).get('photo') === '1'
+  const [wide, setWide] = useState(() => window.matchMedia('(min-width: 1280px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)')
+    const on = () => setWide(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   const navigate = useNavigate()
   const { user, profile, canFile } = useAuth()
   const { profiles, byId } = useProfiles()
@@ -41,9 +49,29 @@ export function FCRForm() {
   const [requests, setRequests] = useState([])
   const [viber, setViber] = useState(null) // { number, message } after a Viber request is recorded
   const [photo, setPhoto] = useState(null)
-  const [photoStep, setPhotoStep] = useState('')
+  const [qrOpen, setQrOpen] = useState(false)
 
   useEffect(() => { fetchAccounts({ activeOnly: false }).then(setAccounts) }, [])
+
+  const loadPhoto = useCallback(async () => {
+    if (!id) return
+    const { data: ph } = await supabase.from('fcr_photos').select('*').eq('fcr_id', id).maybeSingle()
+    setPhoto((cur) => (cur?.storage_path === ph?.storage_path && cur?.purged_at === ph?.purged_at ? cur : ph || null))
+  }, [id])
+
+  // While the laptop shows the QR code, watch for the photo taken on the phone.
+  useEffect(() => {
+    if (!qrOpen) return
+    const t = setInterval(loadPhoto, 4000)
+    return () => clearInterval(t)
+  }, [qrOpen, loadPhoto])
+
+  // Opened from the QR code on a phone: bring the photo step into view.
+  useEffect(() => {
+    if (!photoStep) return
+    const t = setTimeout(() => document.getElementById('visit-photo')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 600)
+    return () => clearTimeout(t)
+  }, [photoStep, fcr?.id])
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.from('fcrs').select('*').eq('id', id).single()
@@ -53,8 +81,8 @@ export function FCRForm() {
     setDirty(false)
     supabase.from('email_log').select('created_at, recipient, result, error').eq('related_id', id).order('created_at', { ascending: false }).then(({ data: e }) => setEmails(e || []))
     supabase.from('fcr_ack_requests').select('*').eq('fcr_id', id).order('sent_at', { ascending: false }).then(({ data: r }) => setRequests(r || []))
-    supabase.from('fcr_photos').select('*').eq('fcr_id', id).maybeSingle().then(({ data: ph }) => setPhoto(ph || null))
-  }, [id, navigate])
+    loadPhoto()
+  }, [id, navigate, loadPhoto])
 
   useEffect(() => {
     if (id) load()
@@ -128,8 +156,21 @@ export function FCRForm() {
       companion_id: fcr.companion_id || null, companion2_id: fcr.companion2_id || null,
     }
     if (fcr.id) {
-      const { error } = await supabase.from('fcrs').update(payload).eq('id', fcr.id)
+      // Only save over the version this page loaded. If the FCR was changed on
+      // another device (e.g. the phone) since, stop instead of overwriting.
+      const { data, error } = await supabase.from('fcrs').update(payload).eq('id', fcr.id).eq('updated_at', fcr.updated_at).select('id, updated_at')
       if (error) throw new Error(error.message)
+      if (!data?.length) {
+        const reload = await confirm({
+          title: 'This FCR was changed on another device',
+          body: 'It was saved on another device (for example your phone) after you opened it here. Reload to get the latest version. Changes you typed on this page since then will be lost, so copy anything you need first.',
+          confirmLabel: 'Reload latest',
+        })
+        if (reload) await load()
+        throw new Error('Not saved: newer version on another device')
+      }
+      setFcr((f) => ({ ...f, updated_at: data[0].updated_at }))
+      setDirty(false)
       return fcr.id
     }
     const { data, error } = await supabase.from('fcrs').insert(payload).select('id').single()
@@ -177,20 +218,34 @@ export function FCRForm() {
     return true
   }
 
-  const takePhoto = async (file) => {
-    if (!validate()) return
-    setBusy('photo'); setErrors((e) => ({ ...e, photo: undefined }))
+  // Desktop QR handoff needs a saved FCR to link to.
+  const ensureSavedForPhoto = async () => {
+    if (!validate()) return null
+    try {
+      if (fcr.id && !dirty) return fcr.id
+      if (!await confirmResetIfNeeded()) return null
+      const newId = await persist()
+      if (!fcr.id) navigate(`/fcr/${newId}`, { replace: true }); else await load()
+      return newId
+    } catch (e) { toast.error(e.message); return null }
+  }
+
+  // Phone: photo from the in-app camera (location already required there).
+  const onCaptured = async ({ shot, loc, place }) => {
+    if (!validate()) return false
+    setErrors((e) => ({ ...e, photo: undefined }))
     try {
       let fid = fcr.id
       if (!fid || dirty) {
-        if (!await confirmResetIfNeeded()) return
+        if (!await confirmResetIfNeeded()) return false
         fid = await persist()
         if (!fcr.id) navigate(`/fcr/${fid}`, { replace: true })
       }
-      const r = await uploadVisitPhoto({ fcrId: fid, ownerId: user.id, file, onStep: (s) => setPhotoStep(`${s}…`) })
-      toast.success(r.located ? 'Photo saved with time and location' : 'Photo saved. Location was not shared, and your RSM will see that.')
+      await uploadCapturedPhoto({ fcrId: fid, ownerId: user.id, shot, loc, place })
+      toast.success('Photo saved with time and location')
       if (fcr.id) await load()
-    } catch (e) { toast.error(e.message) } finally { setBusy(''); setPhotoStep('') }
+      return true
+    } catch (e) { toast.error(e.message); return false }
   }
 
   const sendEmail = async () => {
@@ -280,8 +335,9 @@ export function FCRForm() {
   }
 
   const photoPanel = (
-    <VisitPhoto photo={photo} visitDate={fcr.visit_date} error={errors.photo} busyStep={photoStep}
-      canChange={editable && fcr.ack_status === 'not_sent'} onFile={takePhoto} />
+    <VisitPhoto photo={photo} visitDate={fcr.visit_date} error={errors.photo} who={kamName} fcrId={fcr.id}
+      canChange={editable && fcr.ack_status === 'not_sent'} highlight={photoStep && !photo}
+      onEnsureSaved={ensureSavedForPhoto} onCaptured={onCaptured} onQrChange={setQrOpen} />
   )
 
   const selectableAccounts = accounts.filter((a) => a.active || a.id === fcr.account_id)
@@ -340,7 +396,7 @@ export function FCRForm() {
           {template && fcr.form_data && (
             <>
               {/* On phones the side column falls below the long form; keep the photo near the top. */}
-              <div className="xl:hidden">{photoPanel}</div>
+              {!wide && photoPanel}
               <CustomerInfo template={template} info={customerInfo} visitDate={fcr.visit_date} period={fcr.period} kamName={kamName} />
               <FCRFormBody template={template} formData={fcr.form_data} readOnly={!editable} errors={errors}
                 onChange={(fd) => update({ form_data: fd })} />
@@ -351,7 +407,7 @@ export function FCRForm() {
         {/* Right rail */}
         {template && fcr.form_data && (
           <div className="space-y-4">
-            <div className="hidden xl:block">{photoPanel}</div>
+            {wide && photoPanel}
             <div className="panel">
               <div className="panel-head"><span className="panel-title">Customer acknowledgement</span><AckChip status={fcr.ack_status} /></div>
               <div className="p-4 space-y-3">

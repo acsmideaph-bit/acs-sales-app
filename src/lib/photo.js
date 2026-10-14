@@ -1,35 +1,59 @@
 // Visit photo: one per FCR, required before the acknowledgement request.
 //
-// Evidence recorded with each photo (see migration 20261014000003):
-//   uploaded_at   database time when attached (the KAM cannot set it)
-//   lat/lng/acc   the phone's location, read by the app at capture
-//   taken_at      the photo's own date/time (EXIF), when the phone keeps it
-//   exif_lat/lng  the photo's own GPS, when the phone keeps it (often stripped)
-//   place_label   readable address for the coordinates (OpenStreetMap)
-// No location-based flags: KAMs meet customers at restaurants and other
-// venues. Only venue-independent flags (photoFlags below).
+// Rules (Ronald, Oct 14, 2026):
+//  * Taken ONLY with the in-app live camera on a phone: no gallery, no file
+//    upload. A laptop hands off to the phone with a QR code.
+//  * Location is required (the database refuses a photo without it).
+//  * Recorded with each photo:
+//      uploaded_at   database time when attached (the KAM cannot set it)
+//      taken_at      moment the shutter was pressed (device clock)
+//      lat/lng/acc   the phone's location at capture, with accuracy
+//      place_label   readable address for the coordinates (OpenStreetMap)
+//      device        e.g. "iPhone · Safari", "Android · Chrome"
+//    and the time + place are stamped onto the image itself.
+//  * No location-based flags: KAMs meet customers at restaurants and other
+//    venues. Only venue-independent flags (photoFlags below).
 import { supabase, rpc } from './supabase'
 import { fmtDateTime } from './dates'
 
 export const PHOTO_BUCKET = 'fcr-photos'
 export const PHOTO_RETENTION_DAYS = 60
 const MAX_SIDE = 1280
-const QUALITY = 0.72
+const QUALITY = 0.75
 
 // Manila calendar date of a timestamp (PH has no daylight saving).
 export const manilaYmd = (ts) => (ts ? new Date(new Date(ts).getTime() + 8 * 3600e3).toISOString().slice(0, 10) : null)
-
 export const mapsUrl = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`
 
-// Phone location. Resolves null (never throws) if the KAM declines or the
-// phone cannot get a fix, so the photo can still be attached and flagged.
-export function getLocation(timeoutMs = 15000) {
+// Phone or tablet (has a camera + GPS in the hand). iPadOS reports itself as
+// a Mac, so it is detected by touch support.
+export function isMobileDevice() {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1
+  return Boolean(navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadOS)
+}
+
+export function deviceLabel() {
+  const ua = navigator.userAgent || ''
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad'
+    : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Macintosh/.test(ua) ? 'Mac' : 'Other'
+  const br = /EdgA?\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
+    : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Browser'
+  return `${os} · ${br}`
+}
+
+export const cameraSupported = () => Boolean(window.isSecureContext && navigator.mediaDevices?.getUserMedia)
+
+// Location for the photo. Resolves { loc } or { error } (never throws), so the
+// camera screen can explain what to fix.
+export function getLocation(timeoutMs = 20000) {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null)
+    if (!navigator.geolocation) return resolve({ error: 'unsupported' })
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy) }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 },
+      (p) => resolve({ loc: { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy) } }),
+      (e) => resolve({ error: e.code === 1 ? 'denied' : e.code === 3 ? 'timeout' : 'unavailable' }),
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 },
     )
   })
 }
@@ -44,55 +68,50 @@ export async function placeName(lat, lng) {
   } catch { return null }
 }
 
-// Read the photo's own metadata, then shrink it to a ~150 KB JPEG (which also
-// drops the original metadata from the stored file; we keep it as data).
-export async function processPhoto(file) {
-  let taken = null; let exifLat = null; let exifLng = null
-  try {
-    const exifr = (await import('exifr')).default
-    const meta = await exifr.parse(file, { pick: ['DateTimeOriginal', 'CreateDate'] })
-    const d = meta?.DateTimeOriginal || meta?.CreateDate
-    if (d instanceof Date && !Number.isNaN(d.getTime())) taken = d.toISOString()
-    const gps = await exifr.gps(file).catch(() => null)
-    if (Number.isFinite(gps?.latitude) && Number.isFinite(gps?.longitude)) { exifLat = gps.latitude; exifLng = gps.longitude }
-  } catch { /* no readable metadata: fine */ }
-
-  const bmp = await createImageBitmap(file)
-  const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height))
-  const w = Math.round(bmp.width * scale); const h = Math.round(bmp.height * scale)
+// Grab the current camera frame, shrink to ~150 KB and stamp time + place.
+export async function captureFrame(video, { loc, place, who }) {
+  const vw = video.videoWidth; const vh = video.videoHeight
+  if (!vw || !vh) throw new Error('The camera is not ready yet')
+  const scale = Math.min(1, MAX_SIDE / Math.max(vw, vh))
+  const w = Math.round(vw * scale); const h = Math.round(vh * scale)
   const canvas = document.createElement('canvas')
   canvas.width = w; canvas.height = h
-  canvas.getContext('2d').drawImage(bmp, 0, 0, w, h)
-  bmp.close?.()
+  const g = canvas.getContext('2d')
+  g.drawImage(video, 0, 0, w, h)
+  const takenAt = new Date()
+  const lines = [
+    `${fmtDateTime(takenAt.toISOString())}${who ? ` · ${who}` : ''}`,
+    loc ? `${place ? `${place} · ` : ''}${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)} ±${loc.accuracy} m` : '',
+  ].filter(Boolean)
+  const fs = Math.max(14, Math.round(w / 48))
+  g.font = `600 ${fs}px Inter, -apple-system, Segoe UI, sans-serif`
+  const pad = Math.round(fs * 0.6)
+  const boxH = lines.length * (fs + 6) + pad * 2
+  g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(0, h - boxH, w, boxH)
+  g.fillStyle = '#fff'
+  lines.forEach((t, i) => g.fillText(t.length > 110 ? `${t.slice(0, 107)}…` : t, pad, h - boxH + pad + fs + i * (fs + 6) - 2))
   const blob = await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('Could not process the photo'))), 'image/jpeg', QUALITY))
-  return { blob, width: w, height: h, takenAt: taken, exifLat, exifLng }
+  return { blob, width: w, height: h, takenAt: takenAt.toISOString() }
 }
 
-// Upload + attach. The location is read while the photo processes.
-export async function uploadVisitPhoto({ fcrId, ownerId, file, onStep = () => {} }) {
-  onStep('Reading location')
-  const locP = getLocation()
-  onStep('Preparing photo')
-  const p = await processPhoto(file)
-  const loc = await locP
-  const place = loc ? await placeName(loc.lat, loc.lng) : null
-  onStep('Uploading')
+// Upload + attach a photo captured in the app.
+export async function uploadCapturedPhoto({ fcrId, ownerId, shot, loc, place }) {
   const path = `${ownerId}/${fcrId}/${crypto.randomUUID()}.jpg`
-  const { error: upErr } = await supabase.storage.from(PHOTO_BUCKET).upload(path, p.blob, { contentType: 'image/jpeg', upsert: false })
+  const { error: upErr } = await supabase.storage.from(PHOTO_BUCKET).upload(path, shot.blob, { contentType: 'image/jpeg', upsert: false })
   if (upErr) throw new Error(upErr.message)
   let oldPath = null
   try {
     oldPath = await rpc('attach_fcr_photo', {
-      p_fcr: fcrId, p_path: path, p_taken_at: p.takenAt, p_exif_lat: p.exifLat, p_exif_lng: p.exifLng,
-      p_lat: loc?.lat ?? null, p_lng: loc?.lng ?? null, p_accuracy: loc?.accuracy ?? null,
-      p_place: place, p_width: p.width, p_height: p.height, p_bytes: p.blob.size,
+      p_fcr: fcrId, p_path: path, p_taken_at: shot.takenAt, p_exif_lat: null, p_exif_lng: null,
+      p_lat: loc.lat, p_lng: loc.lng, p_accuracy: loc.accuracy,
+      p_place: place, p_width: shot.width, p_height: shot.height, p_bytes: shot.blob.size,
+      p_device: deviceLabel(), p_source: 'live_camera',
     })
   } catch (e) {
     await supabase.storage.from(PHOTO_BUCKET).remove([path])
     throw e
   }
   if (oldPath) await supabase.storage.from(PHOTO_BUCKET).remove([oldPath])
-  return { located: Boolean(loc) }
 }
 
 export async function photoUrl(path, seconds = 3600) {
@@ -108,6 +127,7 @@ export function photoFlags(photo, visitDate) {
   const shotDate = manilaYmd(photo.taken_at || photo.uploaded_at)
   if (visitDate && shotDate && shotDate !== visitDate) flags.push(`Photo ${photo.taken_at ? 'taken' : 'uploaded'} on a different day than the visit`)
   if (photo.lat == null) flags.push('Location not shared')
+  if (photo.source && photo.source !== 'live_camera') flags.push('Not taken with the in-app camera')
   return flags
 }
 
@@ -119,6 +139,7 @@ export function photoFacts(photo) {
   out.push(`Uploaded: ${fmtDateTime(photo.uploaded_at)}`)
   if (photo.lat != null) out.push(`Location: ${photo.lat.toFixed(5)}, ${photo.lng.toFixed(5)}${photo.accuracy_m ? ` (±${Math.round(photo.accuracy_m)} m)` : ''}`)
   if (photo.place_label) out.push(`Place: ${photo.place_label}`)
+  if (photo.device) out.push(`Device: ${photo.device}${photo.source === 'live_camera' ? ' (in-app camera)' : ''}`)
   if (photo.exif_lat != null) out.push(`Photo GPS: ${photo.exif_lat.toFixed(5)}, ${photo.exif_lng.toFixed(5)}`)
   if (photo.purged_at) out.push(`Photo file deleted ${fmtDateTime(photo.purged_at)} (${PHOTO_RETENTION_DAYS}-day retention); details kept`)
   return out

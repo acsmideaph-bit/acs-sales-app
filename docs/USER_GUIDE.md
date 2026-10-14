@@ -24,7 +24,8 @@ flowchart LR
 **After every visit**
 1. *Field Contact Reports* → **New FCR** → pick the account. The form (ACS or Sub Dealer) follows the account type; the header fills from the account profile.
 2. Fill the sections you covered. Get-Back Items and Coverage Notes are what the customer will read most closely. *Preview minutes* shows exactly what they will see.
-3. **Take the visit photo** with the customer (ask them first). One photo per FCR, and it is **required** before you can send for acknowledgement. On a phone the camera opens directly; allow location when asked. The app records the time and where the photo was taken. You can retake it until the request goes out; after that it is locked.
+3. **Take the visit photo** with the customer (ask them first). One photo per FCR, and it is **required** before you can send for acknowledgement. Photos are taken **only on a phone, with the app's live camera**. There is no gallery and no file upload. **Location is required**: allow it when asked, or the shutter stays off. The time, your name and the place are stamped on the photo. Started the FCR on a laptop? Tap **Take the photo on my phone**, scan the QR code, sign in on the phone if asked, and the FCR opens at the photo step. The laptop page shows the photo by itself once it's saved. You can retake it until the request goes out; after that it is locked.
+   - If you edit the same FCR on two devices, the app stops the older one from overwriting the newer save and asks you to reload.
 4. Enter the **attendee name** (required), then send the acknowledgement request either way:
    - **By email**: enter the attendee's email address.
    - **By Viber**: enter the **Viber number** and the **number owner** (whose number it is). The app records the request, copies a ready-made message and opens a Viber chat with that number. Paste and send. Send it to that same number so the record matches.

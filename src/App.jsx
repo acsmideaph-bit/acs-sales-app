@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { useAuth } from './context/AuthContext'
 import { isConfigured } from './lib/supabase'
@@ -26,8 +26,10 @@ import { Users } from './pages/admin/Users'
 
 function Guard({ children, when = true }) {
   const { user, profile, loading } = useAuth()
+  const loc = useLocation()
   if (loading) return <Spinner />
-  if (!user) return <Navigate to="/login" replace />
+  // Remember where they were going (e.g. the FCR photo step opened by QR).
+  if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />
   if (profile && !profile.active) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
@@ -40,6 +42,14 @@ function Guard({ children, when = true }) {
   }
   if (!when) return <Navigate to="/dashboard" replace />
   return children
+}
+
+function LoginRoute() {
+  const { user, loading } = useAuth()
+  const { state } = useLocation()
+  if (loading) return <Spinner />
+  if (user) return <Navigate to={state?.from && state.from !== '/login' ? state.from : '/dashboard'} replace />
+  return <Login />
 }
 
 export default function App() {
@@ -61,7 +71,7 @@ export default function App() {
       <Toaster position="top-right" closeButton toastOptions={{ style: { fontFamily: 'Inter, sans-serif', fontSize: 13 } }} />
       <DialogHost />
       <Routes>
-        <Route path="/login" element={loading ? <Spinner /> : user ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/login" element={<LoginRoute />} />
         {/* Public, no login: the customer's acknowledgement page */}
         <Route path="/acknowledge/:token" element={<Acknowledge />} />
 
