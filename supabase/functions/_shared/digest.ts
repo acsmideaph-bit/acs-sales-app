@@ -102,11 +102,13 @@ export async function runDigest(req: Request, opts: {
   // Leaders (anyone with direct reports) get their branch. Admins get the
   // whole ACS line, the same view as the Director (confirmed by Ronald,
   // Oct 13, 2026: admins have maximum access, at least equal to the leaders).
-  const leaders = profiles.filter((p) => profiles.some((x) => x.supervisor_id === p.id));
-  const orgAdmins = profiles.filter((p) => p.role === "admin" && !leaders.includes(p));
+  // Admins always get the whole-ACS view, even if a test KAM reports to them.
+  const leaders = profiles.filter((p) => p.role !== "admin" && profiles.some((x) => x.supervisor_id === p.id));
+  const orgAdmins = profiles.filter((p) => p.role === "admin");
   const recipients = [...leaders, ...orgAdmins];
   const wholeOrg = (selfId: string) => profiles
-    .filter((p) => p.role !== "admin" && p.role !== "viewer" && p.id !== selfId)
+    // Test users (team TEST) appear only in their own superior's digest.
+    .filter((p) => p.role !== "admin" && p.role !== "viewer" && p.id !== selfId && ((p.team || "").toUpperCase() !== "TEST" || p.supervisor_id === selfId))
     .sort((a, b) => (a.team || "").localeCompare(b.team || "") || a.full_name.localeCompare(b.full_name));
   const results: unknown[] = [];
   const previews: { to: string; subject: string; html: string }[] = [];
