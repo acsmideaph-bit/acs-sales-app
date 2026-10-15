@@ -17,7 +17,7 @@ import { downloadFcrPdf } from '../../lib/lazy'
 import { FCRFormBody, CustomerInfo } from './FCRFormBody'
 import { MinutesView } from '../../components/MinutesView'
 import { VisitPhoto } from '../../components/VisitPhoto'
-import { uploadCapturedPhoto } from '../../lib/photo'
+import { uploadCapturedPhoto, PHOTO_BUCKET } from '../../lib/photo'
 import { PageHeader, Spinner, StatusChip, AckChip, Field, Segmented, Modal, confirm, prompt } from '../../components/ui'
 import { notifyPendingChanged } from '../../components/Layout'
 import {
@@ -36,7 +36,7 @@ export function FCRForm() {
     return () => mq.removeEventListener('change', on)
   }, [])
   const navigate = useNavigate()
-  const { user, profile, canFile } = useAuth()
+  const { user, profile, canFile, isAdmin, canWrite } = useAuth()
   const { profiles, byId } = useProfiles()
   const [accounts, setAccounts] = useState([])
   const [fcr, setFcr] = useState(null)
@@ -315,6 +315,18 @@ export function FCRForm() {
     if (error) toast.error(error.message); else { toast.success('Deleted'); navigate('/fcr') }
   }
 
+  // Admins: delete any FCR, with a reason. The database keeps a full snapshot
+  // in fcr_deletions (admin-only) and returns the photo path to remove.
+  const adminDelete = async () => {
+    const reason = await prompt({ title: 'Delete this FCR permanently?', body: 'A copy is kept in the admin deletion log. The KAM, RSM and reports will no longer see it.', label: 'Reason (required)', required: true, confirmLabel: 'Delete FCR', danger: true })
+    if (!reason) return
+    try {
+      const path = await rpc('admin_delete_fcr', { p_id: fcr.id, p_reason: reason })
+      if (path) await supabase.storage.from(PHOTO_BUCKET).remove([path])
+      toast.success('FCR deleted and logged'); navigate('/fcr')
+    } catch (e) { toast.error(e.message) }
+  }
+
   const review = async (approve) => {
     let comment = null
     if (!approve) {
@@ -355,6 +367,7 @@ export function FCRForm() {
           {!editable && fcr.id && <span className="chip-draft"><Lock size={11} /> Read-only</span>}
           {fcr.id && <button className="btn-secondary" onClick={pdf} disabled={busy === 'pdf'}><FileDown size={14} /> PDF</button>}
           {editable && fcr.id && fcr.status === 'draft' && fcr.ack_status !== 'acknowledged' && <button className="btn-ghost text-bad" onClick={remove} aria-label="Delete"><Trash2 size={14} /></button>}
+          {!editable && isAdmin && canWrite && fcr.id && <button className="btn-ghost text-bad" onClick={adminDelete} aria-label="Delete FCR (admin)" title="Admin: delete this FCR"><Trash2 size={14} /> Delete</button>}
           {editable && <button className="btn-secondary" onClick={save} disabled={Boolean(busy) || !template}><Save size={14} /> Save draft</button>}
         </>} />
 

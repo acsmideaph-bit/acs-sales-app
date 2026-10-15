@@ -57,6 +57,7 @@ Same reports for your whole branch, grouped by RSM. You receive the Friday and m
 
 - Admins see every record and every report across all of ACS, and receive the Friday and monthly digest for the whole team (subject "All ACS"). Approvals stay with each KAM's RSM.
 - *Users and org chart*: edit the roster (role, team, **Reports to**, digest email) → **Save and sync**. Click a user's access chip to make them read-only. New people also need a login (see docs/SETUP.md step 4).
+- *Delete an FCR* (duplicates, test entries, wrong account): open the FCR → **Delete** → type the reason. The FCR, its photo and its request history are removed for everyone; a full copy is kept in the admin-only deletion log (`fcr_deletions`). Cannot be undone from the app.
 - *Email log*: every email attempt. **Preview weekly/monthly** and **Test weekly to me** before launch and after any change.
 
 ## Everyone
