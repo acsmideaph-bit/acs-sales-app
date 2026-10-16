@@ -5,7 +5,8 @@
 // 1. TTA plan ("ACS Master Monitoring (TTA PLAN SOURCE)"): one row per dealer x
 //    KAM. Jan..Dec hold the target only in the months that KAM owns the dealer.
 //    A blank month = not that KAM's month; a number (also 0 or "-") = owned.
-// 2. Final DSR of a month: summed per BP code from the "Actual Sales" column.
+// 2. Final DSR of a month: summed per BP code from the "Actual Sales" column,
+//    RAC and LC lines only (MBT is not ACS sales).
 
 export const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
@@ -147,13 +148,52 @@ export const planPayload = (parsed) => parsed.rows.map(({ bp_code, account, regi
 const isBpHeader = (x) => /^(BP|B\.P\.)\s*(CODE|NO\.?|NUMBER|#)$/.test(x) || x === 'BP CODE' || x === 'CUSTOMER BP CODE'
 const isActualHeader = (x) => x === 'ACTUAL SALES' || /^ACTUAL SALES\b/.test(x)
 
-export function parseDsr(rows) {
+// Only RAC and LC sales are credited to ACS; MBT (and anything else) sold to
+// the same BP code is not ACS sales (Ronald, Oct 16, 2026). The DSR's
+// product-group column is found by its values; every group is shown with its
+// amount, and only the included ones are summed. No product-group column =
+// refuse, rather than silently count MBT.
+export const ACS_CATEGORIES = ['RAC', 'LC']
+const CATEGORY_ALIASES = {
+  RAC: ['RAC', 'ROOM AIR CONDITIONER', 'ROOM AIR CONDITIONERS', 'ROOM AIRCON', 'RESIDENTIAL AIR CONDITIONER', 'RESIDENTIAL AC'],
+  LC: ['LC', 'LCAC', 'LIGHT COMMERCIAL', 'LIGHT COMMERCIAL AC', 'LIGHT COMMERCIAL AIR CONDITIONER'],
+  MBT: ['MBT', 'MIDEA BUILDING TECHNOLOGIES', 'MIDEA BUILDING TECHNOLOGY'],
+}
+const KNOWN = new Map(Object.entries(CATEGORY_ALIASES).flatMap(([k, list]) => list.map((v) => [v, k])))
+export const categoryOf = (v) => {
+  const n = norm(v)
+  return KNOWN.get(n) || n || '(blank)'
+}
+
+// The column whose values are mostly RAC / LC / MBT (by alias).
+function detectCategoryColumn(rows, h, skip) {
+  let best = -1; let bestHits = 0
+  const width = Math.max(...rows.slice(h.index, h.index + 400).map((r) => (r || []).length))
+  for (let c = 0; c < width; c++) {
+    if (skip.includes(c)) continue
+    let hits = 0
+    for (let r = h.index + 1; r < Math.min(rows.length, h.index + 2000); r++) if (KNOWN.has(norm(rows[r]?.[c]))) hits++
+    if (hits > bestHits) { best = c; bestHits = hits }
+  }
+  return bestHits > 0 ? best : -1
+}
+
+export function parseDsr(rows, { categoryCol = null, include = ACS_CATEGORIES, remap = {} } = {}) {
   const h = findHeader(rows, (c) => c.some(isBpHeader) && c.some(isActualHeader), 60)
   if (!h) throw new Error('Could not find the "BP Code" and "Actual Sales" columns in this file.')
   const bpIx = h.cells.findIndex(isBpHeader)
   const exact = h.cells.findIndex((x) => x === 'ACTUAL SALES')
   const amtIx = exact >= 0 ? exact : h.cells.findIndex(isActualHeader)
+  const catIx = categoryCol ?? detectCategoryColumn(rows, h, [bpIx, amtIx])
+  const headers = (rows[h.index] || []).map((v, i) => ({ index: i, label: String(v ?? '').trim() || `Column ${i + 1}` }))
+  const base = { columns: { bp: rows[h.index][bpIx], amount: rows[h.index][amtIx], category: catIx >= 0 ? headers[catIx]?.label : null, categoryIndex: catIx, headerLine: h.index + 1 }, headers }
+  if (catIx < 0) {
+    return { ...base, needsCategory: true, rows: [], warnings: [], lines: 0, total: 0, categories: [] }
+  }
+
+  const inc = new Set(include)
   const by = new Map()
+  const cats = new Map()
   const warnings = []
   let lines = 0
   for (let r = h.index + 1; r < rows.length; r++) {
@@ -164,15 +204,24 @@ export function parseDsr(rows) {
     if (!/^[0-9A-Za-z-]{3,20}$/.test(bp)) { warnings.push({ line: r + 1, type: 'bad_bp_code', text: `Line ${r + 1}: "${bp}" is not a BP code, skipped` }); continue }
     if (a == null) continue
     if (Number.isNaN(a)) { warnings.push({ line: r + 1, type: 'bad_amount', text: `Line ${r + 1}: Actual Sales for ${bp} is not a number, skipped` }); continue }
+    const found = categoryOf(row[catIx])
+    const cat = remap[found] || found   // an admin may count an unfamiliar group name as RAC or LC
+    const cs = cats.get(found) || { category: found, countedAs: cat, raw: new Set(), lines: 0, amount: 0, included: inc.has(cat) }
+    cs.raw.add(String(row[catIx] ?? '').trim() || '(blank)'); cs.lines += 1; cs.amount += a
+    cats.set(found, cs)
+    if (!inc.has(cat)) continue
     const cur = by.get(bp) || { bp_code: bp, amount: 0, lines: 0 }
     cur.amount += a; cur.lines += 1; lines += 1
     by.set(bp, cur)
   }
   const out = [...by.values()].map((x) => ({ ...x, amount: Math.round(x.amount * 100) / 100 }))
+  const categories = [...cats.values()]
+    .map((c) => ({ ...c, raw: [...c.raw].slice(0, 5), amount: Math.round(c.amount * 100) / 100 }))
+    .sort((a, b) => Number(b.included) - Number(a.included) || b.amount - a.amount)
   return {
-    rows: out, warnings, lines,
+    ...base, rows: out, warnings, lines, categories, include: [...inc],
     total: out.reduce((s, x) => s + x.amount, 0),
-    columns: { bp: rows[h.index][bpIx], amount: rows[h.index][amtIx], headerLine: h.index + 1 },
+    excludedTotal: categories.filter((c) => !c.included).reduce((s, c) => s + c.amount, 0),
   }
 }
 

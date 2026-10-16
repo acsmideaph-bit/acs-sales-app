@@ -99,7 +99,7 @@ function performanceSection(doc, y, s, v) {
   const ach = (a, t) => (t ? `${((a / t) * 100).toFixed(0)}%` : '')
   const body = [
     ['Target', ...v.months.map((r) => n0(r.target)), n0(v.as_of ? v.ytd_target : v.fy_target)],
-    ['Actual sales', ...v.months.map((r) => (loaded(r.month) ? n0(r.actual ?? 0) : '-')), v.as_of ? n0(v.ytd_actual) : ''],
+    ['Actual RAC+LC', ...v.months.map((r) => (loaded(r.month) ? n0(r.actual ?? 0) : '-')), v.as_of ? n0(v.ytd_actual) : ''],
     ['Achievement', ...v.months.map((r) => (loaded(r.month) ? ach(r.actual ?? 0, r.target) : '')), v.as_of ? ach(v.ytd_actual, v.ytd_target) : ''],
   ]
   const vi = v.months.findIndex((r) => r.month === v.visit_month) + 1
@@ -110,7 +110,7 @@ function performanceSection(doc, y, s, v) {
   })
   y = doc.lastAutoTable.finalY
   doc.setFontSize(6.5); doc.setTextColor(90)
-  doc.text(`Target: TTA plan. Actual: final DSR${v.as_of ? ` loaded through ${fmt(v.as_of, 'MMMM yyyy')}` : ' (none loaded yet)'}. YTD covers the months loaded. FY ${v.year} TTA target: PHP ${Number(v.fy_target || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}.`, M, y + 8)
+  doc.text(`Target: TTA plan. Actual: RAC + LC from the final DSR, MBT excluded${v.as_of ? ` loaded through ${fmt(v.as_of, 'MMMM yyyy')}` : ' (none loaded yet)'}. YTD covers the months loaded. FY ${v.year} TTA target: PHP ${Number(v.fy_target || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}.`, M, y + 8)
   doc.setTextColor(0)
   return y + 16
 }

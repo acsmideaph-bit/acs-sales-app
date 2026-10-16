@@ -12,7 +12,8 @@
 --   (import_target_plan). KAMs add sub-dealers by hand, under a dealer they
 --   own this month.
 -- * Official sales = "Actual Sales" per BP code from the final DSR of each
---   month (import_sales_actuals). A re-upload of a month replaces that month.
+--   month (import_sales_actuals), RAC and LC lines only: MBT sold to the same
+--   BP code is not ACS sales. A re-upload of a month replaces that month.
 -- * Sub-dealers follow their parent dealer's monthly owner (recommended in
 --   the integration plan, decision 4).
 --
@@ -98,6 +99,7 @@ create index on public.account_targets (month);
 -- No foreign key to accounts: the DSR also carries customers outside the
 -- ACS plan, and their sales are kept as loaded.
 
+-- RAC + LC only (see import_sales_actuals).
 create table public.sales_actuals (
   bp_code       text not null,
   month         date not null check (extract(day from month) = 1),
@@ -416,15 +418,28 @@ begin
 end $$;
 
 -- Final DSR of one month. p_rows: [{bp_code, amount, lines}] already summed
--- per BP code from the "Actual Sales" column. Replaces that month entirely.
+-- per BP code from the "Actual Sales" column over the INCLUDED product groups
+-- only. p_categories: {column, included: ['RAC','LC'], groups: [{category,
+-- lines, amount, included}]} -- the audit trail of what was counted and what
+-- was left out. Replaces that month entirely.
 create or replace function public.import_sales_actuals(
-  p_month date, p_rows jsonb, p_file_name text default null, p_dry_run boolean default true)
+  p_month date, p_rows jsonb, p_file_name text default null, p_dry_run boolean default true,
+  p_categories jsonb default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare imp uuid; res jsonb; errors jsonb := '[]'::jsonb; mon date := date_trunc('month', p_month)::date;
 begin
   if not public.is_admin() then raise exception 'Only an admin can load the DSR'; end if;
   if p_month is null then raise exception 'Choose the sales month'; end if;
   if mon > public.manila_month() then raise exception 'The sales month cannot be in the future'; end if;
+  -- ACS is credited with RAC and LC only. A file without the product-group
+  -- split cannot prove MBT was left out, so it is refused.
+  if p_categories is null or jsonb_typeof(p_categories->'included') <> 'array'
+     or jsonb_array_length(p_categories->'included') = 0 then
+    raise exception 'Say which product groups are ACS sales (RAC, LC); the DSR must have a product-group column';
+  end if;
+  if exists (select 1 from jsonb_array_elements_text(p_categories->'included') c where upper(c) not in ('RAC','LC')) then
+    raise exception 'Only RAC and LC sales are credited to ACS';
+  end if;
 
   drop table if exists _dsr;
   create temp table _dsr on commit drop as
@@ -443,6 +458,7 @@ begin
     'in_plan', (select count(*) from _dsr d where exists (select 1 from accounts a where a.bp_code = d.bp_code)),
     'in_plan_total', (select coalesce(sum(amount), 0) from _dsr d where exists (select 1 from accounts a where a.bp_code = d.bp_code)),
     'replaces_existing', exists (select 1 from sales_actuals where month = mon),
+    'categories', p_categories,
     'errors', errors);
 
   if p_dry_run or jsonb_array_length(errors) > 0 then return res || jsonb_build_object('applied', false); end if;
@@ -498,7 +514,7 @@ revoke execute on function public.guard_account() from public, anon;
 revoke execute on function public.can_add_sub_dealer(uuid) from public, anon;
 revoke execute on function public.check_fcr_account_owner() from public, anon;
 revoke execute on function public.import_target_plan(integer, jsonb, text, date, text, boolean) from public, anon;
-revoke execute on function public.import_sales_actuals(date, jsonb, text, boolean) from public, anon;
+revoke execute on function public.import_sales_actuals(date, jsonb, text, boolean, jsonb) from public, anon;
 revoke execute on function public.set_kam_alias(text, text, text, text) from public, anon;
 grant execute on function public.manila_month(date) to authenticated, service_role;
 grant execute on function public.can_view_bp(text) to authenticated, service_role;
@@ -507,5 +523,5 @@ grant execute on function public.sales_months_loaded(integer) to authenticated, 
 grant execute on function public.sync_account_owners() to authenticated, service_role;
 grant execute on function public.can_add_sub_dealer(uuid) to authenticated, service_role;
 grant execute on function public.import_target_plan(integer, jsonb, text, date, text, boolean) to authenticated;
-grant execute on function public.import_sales_actuals(date, jsonb, text, boolean) to authenticated;
+grant execute on function public.import_sales_actuals(date, jsonb, text, boolean, jsonb) to authenticated;
 grant execute on function public.set_kam_alias(text, text, text, text) to authenticated;

@@ -37,7 +37,8 @@ to the wrong project before.
   may file (`check_fcr_account_owner` trigger). `accounts.kam_id` is the
   current month's owner, set by `sync_account_owners()` (import + daily cron
   `acs-sync-account-owners`). Official sales = final DSR "Actual Sales" per BP
-  code (`import_sales_actuals`, `sales_actuals`). Plan names map to roster
+  code, RAC + LC lines only, MBT never (`parseDsr`, `import_sales_actuals`
+  refuses other groups and files without a product-group column). Plan names map to roster
   emails in `kam_aliases`. Dealer FCRs (template acs_dealer v2) carry a frozen
   `account_performance` snapshot (lib/targets.js), shown in minutes and PDF.
   Plan/DSR files, aliases seed and target tests stay out of git (company data).
