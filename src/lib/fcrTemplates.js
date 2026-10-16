@@ -15,6 +15,10 @@
 //             rows/addable: blank rows, user may add more
 //   matrix -> value: { period: 'Q1', v: { [group]: { [metric]: { [col]: number } } } }
 //             computed metrics/columns are derived, never stored
+//   performance -> value: snapshot from lib/targets.js performanceSnapshot()
+//             (official TTA target and final-DSR actual sales by BP code).
+//             Filled by the app, never typed; frozen once the customer is asked
+//             to acknowledge.
 
 const competitive = {
   key: 'competitive_check', title: 'Competitive Check', kind: 'grid',
@@ -154,6 +158,19 @@ const ACS_DEALER_V1 = {
   ],
 }
 
+// v2 (Oct 16, 2026): adds the account's official target vs actual sales
+// (TTA plan + final DSR, by BP code) so the KAM discusses performance with
+// the dealer. Everything else is v1 unchanged.
+const performance = {
+  key: 'account_performance', title: 'Sales Update - Account Target vs Actual Sales', kind: 'performance',
+}
+const ACS_DEALER_V2 = {
+  ...ACS_DEALER_V1,
+  version: 2,
+  // First, right under Customer Information: the KAM opens the visit with it.
+  sections: [performance, ...ACS_DEALER_V1.sections],
+}
+
 const ACS_SUB_DEALER_V1 = {
   id: 'acs_sub_dealer',
   version: 1,
@@ -201,12 +218,13 @@ const ACS_SUB_DEALER_V1 = {
 
 export const TEMPLATES = {
   'acs_dealer@1': ACS_DEALER_V1,
+  'acs_dealer@2': ACS_DEALER_V2,
   'acs_sub_dealer@1': ACS_SUB_DEALER_V1,
 }
 
 // Latest version per template id -- what new FCRs are filed under.
 export const CURRENT = {
-  acs_dealer: ACS_DEALER_V1,
+  acs_dealer: ACS_DEALER_V2,
   acs_sub_dealer: ACS_SUB_DEALER_V1,
 }
 
@@ -228,6 +246,7 @@ const blankRow = (section, label) => {
 
 export const emptySection = (section) => {
   if (section.kind === 'text') return ''
+  if (section.kind === 'performance') return null
   if (section.kind === 'matrix') return { period: section.periods[0], v: {} }
   const rows = section.fixedRows
     ? section.fixedRows.map((l) => blankRow(section, l))
@@ -260,6 +279,7 @@ export const normalizeFormData = (template, saved) => {
     const blank = emptySection(s)
     const v = saved?.[s.key]
     if (s.kind === 'text') out[s.key] = typeof v === 'string' ? v : ''
+    else if (s.kind === 'performance') out[s.key] = v && typeof v === 'object' ? v : null
     else if (s.kind === 'matrix') out[s.key] = { ...blank, ...(v || {}), v: v?.v || {} }
     else {
       let rows = Array.isArray(v?.rows) ? v.rows.map((r) => ({ ...blankRow(s), ...r })) : blank.rows
@@ -327,6 +347,7 @@ export const matrixHasContent = (section, value) =>
 
 export const sectionHasContent = (section, value) => {
   if (section.kind === 'text') return Boolean(String(value || '').trim())
+  if (section.kind === 'performance') return Boolean(value?.bp_code)
   if (section.kind === 'matrix') return matrixHasContent(section, value)
   const fieldsFilled = (section.fields || []).some((f) => String(value?.f?.[f.key] ?? '').trim())
   return fieldsFilled || filledRows(section, value).length > 0

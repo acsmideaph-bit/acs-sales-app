@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
-  ArrowLeft, Save, Send, Mail, Link2, RefreshCw, FileDown, Trash2, CheckCircle2, Clock3, Lock, Users, Lightbulb, Check, X, Eye, MessageCircle, Copy,
+  ArrowLeft, Save, Send, Mail, Link2, RefreshCw, FileDown, Trash2, CheckCircle2, Clock3, Lock, Users, Lightbulb, Check, X, Eye, MessageCircle, Copy, Plus,
 } from 'lucide-react'
 import { supabase, rpc, invokeFunction } from '../../lib/supabase'
 import { fetchAccounts, useProfiles } from '../../lib/data'
@@ -13,6 +13,8 @@ import {
 } from '../../lib/fcrTemplates'
 import { buildMinutes } from '../../lib/fcrMinutes'
 import { buildSuggestions } from '../../lib/fcrSuggestions'
+import { fetchOwnedDealers, fetchPerformance, performanceSnapshot, monthName, yearOf } from '../../lib/targets'
+import { SubDealerQuickAdd } from './SubDealerQuickAdd'
 import { downloadFcrPdf } from '../../lib/lazy'
 import { FCRFormBody, CustomerInfo } from './FCRFormBody'
 import { MinutesView } from '../../components/MinutesView'
@@ -50,8 +52,23 @@ export function FCRForm() {
   const [viber, setViber] = useState(null) // { number, message } after a Viber request is recorded
   const [photo, setPhoto] = useState(null)
   const [qrOpen, setQrOpen] = useState(false)
+  const [owned, setOwned] = useState(null)        // dealers the KAM holds in the visit month
+  const [perfLoading, setPerfLoading] = useState(false)
+  const [addSub, setAddSub] = useState(false)
 
-  useEffect(() => { fetchAccounts({ activeOnly: false }).then(setAccounts) }, [])
+  const reloadAccounts = useCallback(() => fetchAccounts({ activeOnly: false }).then(setAccounts), [])
+  useEffect(() => { reloadAccounts() }, [reloadAccounts])
+
+  // Dealer ownership is per month (TTA plan): the VISIT month decides which
+  // dealers this KAM may report on. The database enforces the same rule.
+  const visitMonth = fcr?.visit_date?.slice(0, 7)
+  useEffect(() => {
+    if (!fcr?.owner_id || !visitMonth) return
+    let live = true
+    setOwned(null)
+    fetchOwnedDealers(fcr.owner_id, `${visitMonth}-01`).then((o) => live && setOwned(o)).catch(() => live && setOwned([]))
+    return () => { live = false }
+  }, [fcr?.owner_id, visitMonth])
 
   const loadPhoto = useCallback(async () => {
     if (!id) return
@@ -101,6 +118,37 @@ export function FCRForm() {
     return account ? templateForAccountType(account.account_type) : null
   }, [fcr, account])
 
+  // New FCR: a date change into a month the KAM doesn't hold the dealer
+  // clears the pick (the template followed the account).
+  useEffect(() => {
+    if (!fcr || fcr.id || !owned || !account || account.account_type !== 'dealer') return
+    if (!owned.some((o) => o.account_id === account.id)) setFcr((f) => ({ ...f, account_id: '', template_id: null, form_data: null }))
+  }, [owned, account, fcr])
+
+  // Official target vs actual for dealer FCRs. Refreshed while the draft is
+  // editable and not yet sent; frozen once the customer is asked to confirm.
+  const perfSection = template?.sections.some((x) => x.kind === 'performance')
+  const canRefreshPerf = Boolean(fcr && perfSection && fcr.form_data && account?.bp_code && fcr.owner_id === user.id && canFile
+    && ['draft', 'rejected'].includes(fcr.status) && fcr.ack_status === 'not_sent')
+  useEffect(() => {
+    if (!canRefreshPerf) return
+    let live = true
+    setPerfLoading(true)
+    fetchPerformance(account.bp_code, yearOf(fcr.visit_date))
+      .then((perf) => {
+        if (!live) return
+        const snap = performanceSnapshot(perf, fcr.visit_date)
+        setFcr((f) => {
+          if (!f?.form_data || JSON.stringify(f.form_data.account_performance ?? null) === JSON.stringify(snap)) return f
+          if (f.id) setDirty(true)
+          return { ...f, form_data: { ...f.form_data, account_performance: snap } }
+        })
+      })
+      .catch(() => {})
+      .finally(() => live && setPerfLoading(false))
+    return () => { live = false }
+  }, [canRefreshPerf, account?.bp_code, fcr?.visit_date]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // New FCR: once an account is picked, set the template and pre-fill.
   useEffect(() => {
     if (!fcr || fcr.id || !account || fcr.template_id) return
@@ -139,6 +187,9 @@ export function FCRForm() {
   const validate = () => {
     const e = {}
     if (!fcr.account_id) e.account_id = 'Pick the account you visited'
+    else if (account?.account_type === 'dealer' && owned && !owned.some((o) => o.account_id === account.id)) {
+      e.account_id = `${account.company_name} is not assigned to you for ${monthName(`${fcr.visit_date.slice(0, 7)}-01`)}`
+    }
     if (!fcr.visit_date) e.visit_date = 'Required'
     if (fcr.visit_date > todayYmd()) e.visit_date = 'Cannot be in the future'
     setErrors(e)
@@ -352,15 +403,21 @@ export function FCRForm() {
       onEnsureSaved={ensureSavedForPhoto} onCaptured={onCaptured} onQrChange={setQrOpen} />
   )
 
-  const selectableAccounts = accounts.filter((a) => a.active || a.id === fcr.account_id)
-  const mine = selectableAccounts.filter((a) => a.kam_id === fcr.owner_id)
-  const others = selectableAccounts.filter((a) => a.kam_id !== fcr.owner_id)
+  // Dealers: only those the KAM holds in the visit month (TTA plan, by BP
+  // code). Sub-dealers: the KAM's own, typed in by the KAM.
+  const ownedIds = new Set((owned || []).map((o) => o.account_id))
+  const myDealers = accounts.filter((a) => a.account_type === 'dealer' && ownedIds.has(a.id))
+  const mySubs = accounts.filter((a) => a.account_type === 'sub_dealer' && a.kam_id === fcr.owner_id && (a.active || a.id === fcr.account_id))
+  const current = accounts.find((a) => a.id === fcr.account_id)
+  const listed = new Set([...myDealers, ...mySubs].map((a) => a.id))
+  const dealerName = (id) => accounts.find((a) => a.id === id)?.company_name
+  const monthLabel = fcr.visit_date ? monthName(`${fcr.visit_date.slice(0, 7)}-01`) : ''
 
   return (
     <div className="max-w-[1200px]">
       <PageHeader
         title={template ? template.title : 'New Field Contact Report'}
-        subtitle={fcr.id ? `${kamName} · ${owner?.team || ''} · ${fmt(fcr.visit_date)} ${fcr.period}` : 'Pick the account first; the form follows the account type (dealer or sub-dealer).'}
+        subtitle={fcr.id ? `${kamName} · ${owner?.team || ''} · ${fmt(fcr.visit_date)} ${fcr.period}` : 'Set the visit date, then pick the account. Your dealers follow the TTA plan for that month.'}
         back={<Link to="/fcr" className="btn-ghost -ml-2 mb-1 text-ink-3"><ArrowLeft size={14} /> Field Contact Reports</Link>}
         actions={<>
           {fcr.id && <><AckChip status={fcr.ack_status} /><StatusChip status={fcr.status} /></>}
@@ -387,23 +444,28 @@ export function FCRForm() {
 
       <div className="grid xl:grid-cols-[1fr_340px] gap-5 items-start">
         <div className="space-y-4 min-w-0">
-          {/* Visit */}
-          <div className="panel p-4 grid sm:grid-cols-[1fr_170px_120px] gap-3">
-            <Field label="Account visited" error={errors.account_id}>
-              <select className="input" disabled={!editable || Boolean(fcr.id)} value={fcr.account_id}
-                onChange={(e) => setFcr((f) => ({ ...f, account_id: e.target.value, template_id: null, form_data: null }))}>
-                <option value="">Select account</option>
-                <optgroup label="My accounts">{mine.map((a) => <option key={a.id} value={a.id}>{a.company_name}{a.account_type === 'sub_dealer' ? ' (sub-dealer)' : ''}</option>)}</optgroup>
-                <optgroup label="Other accounts">{others.map((a) => <option key={a.id} value={a.id}>{a.company_name}{a.account_type === 'sub_dealer' ? ' (sub-dealer)' : ''}</option>)}</optgroup>
-              </select>
-            </Field>
+          {/* Visit: the date comes first because its month decides the dealer list. */}
+          <div className="panel p-4 grid sm:grid-cols-[170px_120px_1fr] gap-3">
             <Field label="Visit date" error={errors.visit_date} hint={fcr.ack_requested_at ? 'Locked once acknowledgement is requested' : undefined}>
               <input type="date" className="input" max={todayYmd()} disabled={!editable || Boolean(fcr.ack_requested_at)} value={fcr.visit_date} onChange={(e) => update({ visit_date: e.target.value })} />
             </Field>
             <Field label="Period">
               <Segmented value={fcr.period} onChange={(p) => editable && !fcr.ack_requested_at && update({ period: p })} options={[{ value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' }]} />
             </Field>
-            {!fcr.id && !accounts.length && <p className="text-[12px] text-ink-3 sm:col-span-3">No accounts yet. <Link className="text-accent" to="/accounts/new">Profile an account</Link> first.</p>}
+            <Field label="Account visited" error={errors.account_id}
+              hint={!fcr.id && editable ? (owned === null ? 'Loading your dealers…' : `${myDealers.length} dealer${myDealers.length === 1 ? '' : 's'} assigned to you for ${monthLabel}`) : current?.bp_code ? `BP ${current.bp_code}` : undefined}>
+              <div className="flex gap-2">
+                <select className="input" disabled={!editable || Boolean(fcr.id)} value={fcr.account_id}
+                  onChange={(e) => setFcr((f) => ({ ...f, account_id: e.target.value, template_id: null, form_data: null }))}>
+                  <option value="">Select account</option>
+                  {current && !listed.has(current.id) && <option value={current.id}>{current.company_name}{current.bp_code ? ` · BP ${current.bp_code}` : ''}</option>}
+                  <optgroup label={`My dealers – ${monthLabel}`}>{myDealers.map((a) => <option key={a.id} value={a.id}>{a.company_name} · BP {a.bp_code}</option>)}</optgroup>
+                  <optgroup label="My sub-dealers">{mySubs.map((a) => <option key={a.id} value={a.id}>{a.company_name}{dealerName(a.parent_dealer_id) ? ` (under ${dealerName(a.parent_dealer_id)})` : ''}</option>)}</optgroup>
+                </select>
+                {editable && !fcr.id && <button type="button" className="btn-secondary flex-shrink-0" onClick={() => setAddSub(true)} title="Add a sub-dealer under one of your dealers"><Plus size={14} /> Sub-dealer</button>}
+              </div>
+            </Field>
+            {!fcr.id && editable && owned && !myDealers.length && <p className="text-[12px] text-ink-3 sm:col-span-3">No dealers are assigned to you for {monthLabel} in the TTA plan. If this is wrong, ask the ACS admin to check the plan upload.</p>}
           </div>
 
           {template && fcr.form_data && (
@@ -411,7 +473,7 @@ export function FCRForm() {
               {/* On phones the side column falls below the long form; keep the photo near the top. */}
               {!wide && photoPanel}
               <CustomerInfo template={template} info={customerInfo} visitDate={fcr.visit_date} period={fcr.period} kamName={kamName} />
-              <FCRFormBody template={template} formData={fcr.form_data} readOnly={!editable} errors={errors}
+              <FCRFormBody template={template} formData={fcr.form_data} readOnly={!editable} errors={errors} performanceLoading={perfLoading}
                 onChange={(fd) => update({ form_data: fd })} />
             </>
           )}
@@ -544,6 +606,9 @@ export function FCRForm() {
           <p className="text-2xs text-ink-4 mt-2">Send it to the number above, so the record matches. If Viber does not open on this device, copy the message and send it from your phone.</p>
         </>}
       </Modal>
+
+      <SubDealerQuickAdd open={addSub} onClose={() => setAddSub(false)} dealers={myDealers}
+        onCreated={async (acc) => { setAddSub(false); await reloadAccounts(); setFcr((f) => ({ ...f, account_id: acc.id, template_id: null, form_data: null })) }} />
 
       <Modal open={showMinutes} onClose={() => setShowMinutes(false)} title="Minutes of the Meeting" width="max-w-2xl"
         footer={<button className="btn-secondary" onClick={() => setShowMinutes(false)}>Close</button>}>

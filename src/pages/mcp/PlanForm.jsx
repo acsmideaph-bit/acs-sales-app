@@ -8,6 +8,7 @@ import { fetchAccounts, useProfiles } from '../../lib/data'
 import { useAuth } from '../../context/AuthContext'
 import { fmt, fmtDateTime, monthRange } from '../../lib/dates'
 import { workingDays } from '../../lib/mcp'
+import { fetchOwnedDealers, monthName } from '../../lib/targets'
 import { downloadMcpPdf } from '../../lib/lazy'
 import { MonthCalendar } from '../../components/MonthCalendar'
 import { PageHeader, Spinner, StatusChip, Modal, Field, Segmented, confirm } from '../../components/ui'
@@ -28,8 +29,14 @@ export function PlanForm() {
   const [editing, setEditing] = useState(null) // { index|null, v }
   const [busy, setBusy] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [owned, setOwned] = useState([])
 
   useEffect(() => { fetchAccounts().then(setAccounts) }, [])
+  // Dealers come from the TTA plan month by month: plan the month's own list.
+  useEffect(() => {
+    if (!plan?.owner_id || !plan?.month) return
+    fetchOwnedDealers(plan.owner_id, plan.month).then(setOwned).catch(() => setOwned([]))
+  }, [plan?.owner_id, plan?.month])
   useEffect(() => {
     if (id) {
       supabase.from('itineraries').select('*').eq('id', id).single().then(({ data, error }) => {
@@ -54,8 +61,9 @@ export function PlanForm() {
   const visits = plan.visits || []
   const { start, end } = monthRange(plan.month)
   const items = visits.map((v) => ({ id: v.id, visit_date: v.visit_date, period: v.period, label: accById[v.account_id]?.company_name || 'Account', sub: v.purpose }))
-  const myAccounts = accounts.filter((a) => a.kam_id === plan.owner_id)
-  const otherAccounts = accounts.filter((a) => a.kam_id !== plan.owner_id)
+  const ownedIds = new Set(owned.map((o) => o.account_id))
+  const myAccounts = accounts.filter((a) => a.account_type === 'dealer' && ownedIds.has(a.id))
+  const otherAccounts = accounts.filter((a) => a.account_type === 'sub_dealer' && a.kam_id === plan.owner_id)
   const uniqueAccounts = new Set(visits.map((v) => v.account_id)).size
 
   const setVisits = (fn) => { setPlan((p) => ({ ...p, visits: fn(p.visits || []) })); setDirty(true) }
@@ -216,8 +224,9 @@ export function PlanForm() {
             <Field label="Account">
               <select className="input" value={editing.v.account_id} onChange={(e) => setEditing({ ...editing, v: { ...editing.v, account_id: e.target.value } })}>
                 <option value="">Select account</option>
-                <optgroup label="Assigned to this KAM">{myAccounts.map((a) => <option key={a.id} value={a.id}>{a.company_name}</option>)}</optgroup>
-                <optgroup label="Other accounts">{otherAccounts.map((a) => <option key={a.id} value={a.id}>{a.company_name}</option>)}</optgroup>
+                {editing.v.account_id && !myAccounts.concat(otherAccounts).some((a) => a.id === editing.v.account_id) && <option value={editing.v.account_id}>{accById[editing.v.account_id]?.company_name || 'Account'}</option>}
+                <optgroup label={`Dealers – ${monthName(plan.month)}`}>{myAccounts.map((a) => <option key={a.id} value={a.id}>{a.company_name} · BP {a.bp_code}</option>)}</optgroup>
+                <optgroup label="Sub-dealers">{otherAccounts.map((a) => <option key={a.id} value={a.id}>{a.company_name}</option>)}</optgroup>
               </select>
             </Field>
             <div className="grid grid-cols-2 gap-3">

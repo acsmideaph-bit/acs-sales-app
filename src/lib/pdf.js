@@ -89,6 +89,32 @@ function gridSection(doc, y, s, v) {
   return doc.lastAutoTable.finalY + 10
 }
 
+// Official account target vs actual (snapshot in the FCR), months as columns.
+function performanceSection(doc, y, s, v) {
+  y = bar(doc, y, `${s.title}${v?.bp_code ? `  (BP ${v.bp_code})` : ''}`)
+  if (!v?.bp_code) { autoTable(doc, { ...tableStyles, startY: y, body: [['No TTA target found for this account and year.']] }); return doc.lastAutoTable.finalY + 10 }
+  const n0 = (n) => (n == null ? '' : Math.round(Number(n) / 1000).toLocaleString('en-PH'))
+  const loaded = (m) => v.as_of && m <= v.as_of
+  const head = [["PHP '000", ...v.months.map((r) => fmt(r.month, 'MMM')), v.as_of ? `YTD ${fmt(v.as_of, 'MMM')}` : 'FY']]
+  const ach = (a, t) => (t ? `${((a / t) * 100).toFixed(0)}%` : '')
+  const body = [
+    ['Target', ...v.months.map((r) => n0(r.target)), n0(v.as_of ? v.ytd_target : v.fy_target)],
+    ['Actual sales', ...v.months.map((r) => (loaded(r.month) ? n0(r.actual ?? 0) : '-')), v.as_of ? n0(v.ytd_actual) : ''],
+    ['Achievement', ...v.months.map((r) => (loaded(r.month) ? ach(r.actual ?? 0, r.target) : '')), v.as_of ? ach(v.ytd_actual, v.ytd_target) : ''],
+  ]
+  const vi = v.months.findIndex((r) => r.month === v.visit_month) + 1
+  autoTable(doc, {
+    ...tableStyles, startY: y, head, body,
+    styles: { ...tableStyles.styles, fontSize: 6.5, cellPadding: 2 },
+    columnStyles: Object.fromEntries([...Array(14).keys()].map((i) => [i, { halign: i === 0 ? 'left' : 'right', fontStyle: i === 0 || i === 13 || i === vi ? 'bold' : 'normal' }])),
+  })
+  y = doc.lastAutoTable.finalY
+  doc.setFontSize(6.5); doc.setTextColor(90)
+  doc.text(`Target: TTA plan. Actual: final DSR${v.as_of ? ` loaded through ${fmt(v.as_of, 'MMMM yyyy')}` : ' (none loaded yet)'}. YTD covers the months loaded. FY ${v.year} TTA target: PHP ${Number(v.fy_target || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}.`, M, y + 8)
+  doc.setTextColor(0)
+  return y + 16
+}
+
 function matrixSection(doc, y, s, v) {
   y = bar(doc, y, `${s.title}  (${s.periodLabel}: ${v?.period || ''})`)
   const labels = matrixColumnLabels(s, v?.period)
@@ -135,6 +161,7 @@ export async function renderFcr(doc, { fcr, submitterName, submitterPosition, re
   for (const s of t.sections) {
     if (s.kind === 'text') { y = bar(doc, y, s.title); y = textBox(doc, y, fd[s.key], s.key === 'coverage_notes' ? 70 : 45) }
     else if (s.kind === 'matrix') y = matrixSection(doc, y, s, fd[s.key])
+    else if (s.kind === 'performance') y = performanceSection(doc, y, s, fd[s.key])
     else y = gridSection(doc, y, s, fd[s.key])
   }
 

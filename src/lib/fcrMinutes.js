@@ -9,7 +9,7 @@ import { templateFor, filledRows, sectionHasContent, peso, columnTotal, matrixCe
 // customer-facing summary of what was discussed and agreed: program
 // execution, competitive notes, AR commitments, projects, sub-dealer program,
 // get-back items and coverage notes. Internal sales targets are summarised,
-// not itemised.
+// not itemised; the official account target vs actual is stated in totals.
 //
 // Returns { heading, meta: [[label, value]], blocks: [{title, lines[]}] }.
 export function buildMinutes({ fcr, submitterName, submitterPosition }) {
@@ -51,6 +51,26 @@ export function buildMinutes({ fcr, submitterName, submitterPosition }) {
     const total = columnTotal(v, 'amount')
     if (total) lines.push(`Total overdue discussed: PHP ${peso(total)}`)
     blocks.push({ title: 'AR and Collection', lines })
+  }
+
+  // Official target vs actual (TTA plan + final DSR, by BP code). Part of what
+  // the dealer confirms, so the minutes state the same figures as the form.
+  const ap = sec('account_performance')
+  const snap = ap ? fd[ap.key] : null
+  if (snap?.bp_code) {
+    const php = (n) => `PHP ${peso(Math.round(n || 0))}`
+    const mon = (m) => fmt(m, 'MMMM yyyy')
+    const lines = [`FY ${snap.year} TTA target: ${php(snap.fy_target)} (BP code ${snap.bp_code})`]
+    if (snap.month_target != null) lines.push(`Target for ${mon(snap.visit_month)}: ${php(snap.month_target)}; ${snap.quarter} target: ${php(snap.quarter_target)}`)
+    if (snap.as_of) {
+      const a = snap.ytd_target ? ` (${((snap.ytd_actual / snap.ytd_target) * 100).toFixed(1)}% of target ${php(snap.ytd_target)})` : ''
+      lines.push(`Actual sales January to ${fmt(snap.as_of, 'MMMM yyyy')}, per final DSR: ${php(snap.ytd_actual)}${a}`)
+      const gap = (snap.ytd_target || 0) - (snap.ytd_actual || 0)
+      if (gap > 0) lines.push(`Balance to reach the target to date: ${php(gap)}`)
+    } else {
+      lines.push('Actual sales: no final DSR loaded yet for this year')
+    }
+    blocks.push({ title: 'Sales Performance (Official)', lines })
   }
 
   const tta = sec('tta_trip')

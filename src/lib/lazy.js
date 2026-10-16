@@ -12,6 +12,14 @@ export const saveExportWorkbook = async (args, name) => {
   const x = await import('./excel')
   x.saveWorkbook(x.buildExportWorkbook(args), name)
 }
+// Uploads (TTA plan, DSR): read a .csv/.xlsx in the browser, return each
+// sheet as rows for the parsers in targetImport.js.
+export const readWorkbookRows = async (file) => {
+  const XLSX = (await import('xlsx-js-style')).default
+  const { sheetsToRows } = await import('./targetImport')
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+  return sheetsToRows(XLSX, wb)
+}
 export const saveCensusWorkbook = async (args, name) => {
   const x = await import('./excel')
   x.saveWorkbook(x.buildCensusWorkbook(args), name)

@@ -23,3 +23,11 @@ supabase/seed/org_roster.sql
 docs/INTERPRETATION.md
 supabase/tests/01_workflow_rls_smoke.sql
 supabase/tests/02_live_workflow_rollback.sql
+# TTA plan / DSR files and anything derived from them (company sales data),
+# the plan-name map (staff names) and the target test that uses them.
+References/
+Presentation and Quotation/
+supabase/seed/kam_aliases.sql
+supabase/tests/03_targets_rls_smoke.sql
+*.plan.json
+*.dsr.json

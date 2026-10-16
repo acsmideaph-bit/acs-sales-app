@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, CalendarRange, ClipboardList, CalendarCheck2, Archive,
-  CheckSquare, CalendarClock, FileDown, BarChart3, FileSpreadsheet, Mail, Users, Menu, X, LogOut, Info, UserCog,
+  CheckSquare, CalendarClock, FileDown, BarChart3, FileSpreadsheet, Mail, Users, Menu, X, LogOut, Info, UserCog, Target,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -103,6 +103,7 @@ export function Layout() {
         {isAdmin && (
           <Group label="Admin">
             <NavItem to="/admin/users" icon={Users} label="Users and org chart" />
+            <NavItem to="/admin/targets" icon={Target} label="Targets and sales" />
           </Group>
         )}
       </div>
