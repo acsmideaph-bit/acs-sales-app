@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { Upload, AlertTriangle, CheckCircle2, Pencil } from 'lucide-react'
 import { supabase, rpc } from '../../lib/supabase'
 import { readWorkbookRows } from '../../lib/lazy'
-import { parsePlan, planPayload, parseDsr, fmtPeso, MONTHS, ACS_CATEGORIES } from '../../lib/targetImport'
+import { parsePlan, planPayload, parseDsr, fmtPeso, MONTHS, ACS_CATEGORIES, CATEGORY_LABELS } from '../../lib/targetImport'
 import { monthName } from '../../lib/targets'
 import { fmtDateTime, todayYmd } from '../../lib/dates'
 import { PageHeader, Segmented, Field, Spinner, Empty, Modal, confirm } from '../../components/ui'
@@ -291,12 +291,12 @@ function DsrUpload({ onApplied }) {
   const [file, setFile] = useState(null)
   const [sheet, setSheet] = useState(null)      // { name, rows } of the sheet that holds the DSR
   const [catCol, setCatCol] = useState(null)    // chosen product-group column, when not detected
-  const [remap, setRemap] = useState({})        // unfamiliar group name -> 'RAC' | 'LC'
+  const [remap, setRemap] = useState({})        // unfamiliar group name -> 'RAC' | 'LC' | 'WINDOW'
   const [server, setServer] = useState(null)
   const [busy, setBusy] = useState('')
   const mon = `${month}-01`
 
-  // Only RAC and LC lines are ACS sales; parse again whenever the column or
+  // Only RAC, LC and Window lines are ACS sales; parse again whenever the column or
   // the group mapping changes.
   const parsed = useMemo(() => {
     if (!sheet) return null
@@ -333,7 +333,7 @@ function DsrUpload({ onApplied }) {
   const apply = async () => {
     const ok = await confirm({
       title: `Load the final DSR for ${monthName(mon)}?`,
-      body: `${parsed.rows.length} BP codes, ${fmtPeso(parsed.total)} RAC and LC actual sales. ${fmtPeso(parsed.excludedTotal)} in other groups (MBT and others) is left out.${server?.replaces_existing ? ` This replaces the ${monthName(mon)} sales already loaded.` : ''}`,
+      body: `${parsed.rows.length} BP codes, ${fmtPeso(parsed.total)} ACS actual sales (RAC, LC, Window AC). ${fmtPeso(parsed.excludedTotal)} in other groups (MBT and others) is left out.${server?.replaces_existing ? ` This replaces the ${monthName(mon)} sales already loaded.` : ''}`,
       confirmLabel: 'Load sales',
     })
     if (!ok) return
@@ -351,7 +351,7 @@ function DsrUpload({ onApplied }) {
     <div className="panel">
       <div className="panel-head"><span className="panel-title">Final DSR: official monthly sales</span></div>
       <div className="p-4 space-y-4">
-        <p className="text-[13px] text-ink-3 max-w-3xl">Upload the final DSR of a month. The app sums <strong className="text-ink-2">Actual Sales</strong> per <strong className="text-ink-2">BP Code</strong> for <strong className="text-ink-2">RAC and LC only</strong>; MBT sales to the same account are not ACS sales and are left out. Loading a month again replaces that month.</p>
+        <p className="text-[13px] text-ink-3 max-w-3xl">Upload the final DSR of a month. The app sums <strong className="text-ink-2">Actual Sales</strong> per <strong className="text-ink-2">BP Code</strong> for <strong className="text-ink-2">RAC, LC and Window AC only</strong>; MBT sales to the same account are not ACS sales and are left out. Loading a month again replaces that month.</p>
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Sales month">
             <input type="month" className="input w-44" max={todayYmd().slice(0, 7)} value={month} onChange={(e) => setMonth(e.target.value)} />
@@ -364,7 +364,7 @@ function DsrUpload({ onApplied }) {
 
         {parsed && !parsed.error && (
           <div className="flex flex-wrap items-end gap-3">
-            <Field label="Product group column (RAC / LC / MBT)" hint={parsed.needsCategory ? undefined : 'Found by its values. Change it if this is the wrong column.'}>
+            <Field label="Product group column (RAC / LC / Window / MBT)" hint={parsed.needsCategory ? undefined : 'Found by its values. Change it if this is the wrong column.'}>
               <select className="input w-72" value={parsed.columns.categoryIndex ?? -1} onChange={(e) => { setCatCol(Number(e.target.value)); setRemap({}) }}>
                 <option value={-1} disabled>Choose the column</option>
                 {parsed.headers.map((h) => <option key={h.index} value={h.index}>{h.label}</option>)}
@@ -373,7 +373,7 @@ function DsrUpload({ onApplied }) {
             <p className="text-[12px] text-ink-3 pb-2">Sheet <strong className="text-ink-2">{parsed.sheet}</strong>, header on line {parsed.columns.headerLine}: BP "{parsed.columns.bp}", amount "{parsed.columns.amount}".</p>
           </div>
         )}
-        {parsed?.needsCategory && <Notes title="Product group not found" tone="bad" items={['No column with RAC, LC or MBT values was found. Choose the column that tells RAC, LC and MBT apart. Without it the app cannot leave MBT sales out, so the file will not load.']} />}
+        {parsed?.needsCategory && <Notes title="Product group not found" tone="bad" items={['No column with RAC, LC, Window or MBT values was found. Choose the column that tells them apart. Without it the app cannot leave MBT sales out, so the file will not load.']} />}
 
         {ready && (
           <>
@@ -382,7 +382,7 @@ function DsrUpload({ onApplied }) {
                 <thead><tr><th>Group in file</th><th>Values seen</th><th className="!text-right">Lines</th><th className="!text-right">Actual sales (PHP)</th><th>Counted for ACS</th></tr></thead>
                 <tbody>
                   {parsed.categories.map((c) => {
-                    const fixed = ['RAC', 'LC', 'MBT'].includes(c.category)
+                    const fixed = ['RAC', 'LC', 'WINDOW', 'MBT'].includes(c.category)
                     return (
                       <tr key={c.category}>
                         <td className="font-medium">{c.category}</td>
@@ -390,11 +390,12 @@ function DsrUpload({ onApplied }) {
                         <td className="text-right tabular-nums">{c.lines}</td>
                         <td className="text-right tabular-nums">{c.amount.toLocaleString('en-PH', { maximumFractionDigits: 2 })}</td>
                         <td>
-                          {fixed ? (c.included ? <span className="chip-approved">Yes · {c.category}</span> : <span className="chip-draft">No · not ACS</span>) : (
+                          {fixed ? (c.included ? <span className="chip-approved">Yes · {CATEGORY_LABELS[c.category] || c.category}</span> : <span className="chip-draft">No · not ACS</span>) : (
                             <select className="input h-7 w-44" value={remap[c.category] || ''} onChange={(e) => setRemap((m) => ({ ...m, [c.category]: e.target.value || undefined }))}>
                               <option value="">No · not ACS</option>
                               <option value="RAC">Yes · count as RAC</option>
                               <option value="LC">Yes · count as LC</option>
+                              <option value="WINDOW">Yes · count as Window AC</option>
                             </select>
                           )}
                         </td>
@@ -405,7 +406,7 @@ function DsrUpload({ onApplied }) {
               </table>
             </div>
             <Kv items={[
-              ['RAC + LC lines', parsed.lines],
+              ['ACS lines', parsed.lines],
               ['BP codes', parsed.rows.length],
               ['ACS actual sales', fmtPeso(parsed.total)],
               ['ACS dealers in file', server ? `${server.in_plan} · ${fmtPeso(server.in_plan_total)}` : '…'],
@@ -531,7 +532,7 @@ export function Targets() {
   const last = (kind) => imports?.find((i) => i.kind === kind)
   return (
     <>
-      <PageHeader title="Targets and sales" subtitle="Official sources: the TTA plan (dealers by BP code, monthly KAM and target) and the final DSR of each month (Actual Sales by BP code, RAC and LC only; MBT excluded)." />
+      <PageHeader title="Targets and sales" subtitle="Official sources: the TTA plan (dealers by BP code, monthly KAM and target) and the final DSR of each month (Actual Sales by BP code: RAC, LC and Window AC; MBT excluded)." />
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <Segmented value={tab} onChange={setTab} options={[{ value: 'plan', label: 'TTA plan' }, { value: 'dsr', label: 'Monthly DSR' }, { value: 'names', label: 'Plan names' }, { value: 'history', label: 'History' }]} />
         <span className="text-[12px] text-ink-3 flex items-center gap-1.5">

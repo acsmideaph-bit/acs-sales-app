@@ -41,7 +41,7 @@ export function PerformanceTable({ snap, highlight }) {
     [`Target, ${snap.quarter} ${snap.year}`, php0(snap.quarter_target)],
     [`FY ${snap.year} TTA target`, php0(snap.fy_target)],
     snap.as_of
-      ? [`Actual RAC + LC, Jan–${short(snap.as_of)}`, `${php0(snap.ytd_actual)}`, `${pct(ytdPct)} of ${php0(snap.ytd_target)} target`]
+      ? [`Actual ACS sales, Jan–${short(snap.as_of)}`, `${php0(snap.ytd_actual)}`, `${pct(ytdPct)} of ${php0(snap.ytd_target)} target`]
       : ['Actual sales', 'No final DSR loaded yet'],
   ]
   return (
@@ -73,7 +73,7 @@ export function PerformanceTable({ snap, highlight }) {
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold bg-canvas">{k0(snap.as_of ? snap.ytd_target : snap.fy_target)}</td>
             </tr>
             <tr className="border-b border-line">
-              <td className="sticky left-0 bg-white px-2 py-1.5 italic text-ink-2 whitespace-nowrap">Actual RAC+LC</td>
+              <td className="sticky left-0 bg-white px-2 py-1.5 italic text-ink-2 whitespace-nowrap">Actual sales</td>
               {snap.months.map((r) => <td key={r.month} className={`px-1.5 py-1.5 text-right tabular-nums ${r.month === vm ? 'bg-accent-soft' : ''}`}>{loaded(r.month) ? k0(r.actual ?? 0) : <span className="text-ink-4">–</span>}</td>)}
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold bg-canvas">{snap.as_of ? k0(snap.ytd_actual) : ''}</td>
             </tr>
@@ -89,7 +89,7 @@ export function PerformanceTable({ snap, highlight }) {
         </table>
       </div>
       <p className="px-3 py-1.5 text-2xs text-ink-3 border-t border-line">
-        BP {snap.bp_code} · Held by {ownerSpans(snap.months)} · Target from the TTA plan; actual sales are RAC + LC from the final DSR (MBT excluded){snap.as_of ? ` (loaded through ${monthName(snap.as_of)})` : ''}. YTD compares actual with target for the months loaded.
+        BP {snap.bp_code} · Held by {ownerSpans(snap.months)} · Target from the TTA plan; actual sales are RAC, LC and Window AC from the final DSR (MBT excluded){snap.as_of ? ` (loaded through ${monthName(snap.as_of)})` : ''}. YTD compares actual with target for the months loaded.
       </p>
     </div>
   )

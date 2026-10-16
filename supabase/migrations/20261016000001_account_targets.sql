@@ -12,7 +12,7 @@
 --   (import_target_plan). KAMs add sub-dealers by hand, under a dealer they
 --   own this month.
 -- * Official sales = "Actual Sales" per BP code from the final DSR of each
---   month (import_sales_actuals), RAC and LC lines only: MBT sold to the same
+--   month (import_sales_actuals), RAC, LC and Window AC lines only: MBT sold to the same
 --   BP code is not ACS sales. A re-upload of a month replaces that month.
 -- * Sub-dealers follow their parent dealer's monthly owner (recommended in
 --   the integration plan, decision 4).
@@ -99,7 +99,7 @@ create index on public.account_targets (month);
 -- No foreign key to accounts: the DSR also carries customers outside the
 -- ACS plan, and their sales are kept as loaded.
 
--- RAC + LC only (see import_sales_actuals).
+-- RAC + LC + Window AC only (see import_sales_actuals).
 create table public.sales_actuals (
   bp_code       text not null,
   month         date not null check (extract(day from month) = 1),
@@ -419,7 +419,7 @@ end $$;
 
 -- Final DSR of one month. p_rows: [{bp_code, amount, lines}] already summed
 -- per BP code from the "Actual Sales" column over the INCLUDED product groups
--- only. p_categories: {column, included: ['RAC','LC'], groups: [{category,
+-- only. p_categories: {column, included: ['RAC','LC','WINDOW'], groups: [{category,
 -- lines, amount, included}]} -- the audit trail of what was counted and what
 -- was left out. Replaces that month entirely.
 create or replace function public.import_sales_actuals(
@@ -431,14 +431,14 @@ begin
   if not public.is_admin() then raise exception 'Only an admin can load the DSR'; end if;
   if p_month is null then raise exception 'Choose the sales month'; end if;
   if mon > public.manila_month() then raise exception 'The sales month cannot be in the future'; end if;
-  -- ACS is credited with RAC and LC only. A file without the product-group
+  -- ACS is credited with RAC, LC and Window AC only. A file without the product-group
   -- split cannot prove MBT was left out, so it is refused.
   if p_categories is null or jsonb_typeof(p_categories->'included') <> 'array'
      or jsonb_array_length(p_categories->'included') = 0 then
-    raise exception 'Say which product groups are ACS sales (RAC, LC); the DSR must have a product-group column';
+    raise exception 'Say which product groups are ACS sales (RAC, LC, Window); the DSR must have a product-group column';
   end if;
-  if exists (select 1 from jsonb_array_elements_text(p_categories->'included') c where upper(c) not in ('RAC','LC')) then
-    raise exception 'Only RAC and LC sales are credited to ACS';
+  if exists (select 1 from jsonb_array_elements_text(p_categories->'included') c where upper(c) not in ('RAC','LC','WINDOW')) then
+    raise exception 'Only RAC, LC and Window AC sales are credited to ACS';
   end if;
 
   drop table if exists _dsr;

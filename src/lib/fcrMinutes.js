@@ -64,7 +64,7 @@ export function buildMinutes({ fcr, submitterName, submitterPosition }) {
     if (snap.month_target != null) lines.push(`Target for ${mon(snap.visit_month)}: ${php(snap.month_target)}; ${snap.quarter} target: ${php(snap.quarter_target)}`)
     if (snap.as_of) {
       const a = snap.ytd_target ? ` (${((snap.ytd_actual / snap.ytd_target) * 100).toFixed(1)}% of target ${php(snap.ytd_target)})` : ''
-      lines.push(`Actual RAC and LC sales January to ${fmt(snap.as_of, 'MMMM yyyy')}, per final DSR: ${php(snap.ytd_actual)}${a}`)
+      lines.push(`Actual sales (RAC, LC and Window AC) January to ${fmt(snap.as_of, 'MMMM yyyy')}, per final DSR: ${php(snap.ytd_actual)}${a}`)
       const gap = (snap.ytd_target || 0) - (snap.ytd_actual || 0)
       if (gap > 0) lines.push(`Balance to reach the target to date: ${php(gap)}`)
     } else {
