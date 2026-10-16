@@ -4,6 +4,7 @@ import {
   HEADER_FIELDS, columnTotal, peso, matrixCell, matrixColumnLabels,
 } from '../../lib/fcrTemplates'
 import { fmt } from '../../lib/dates'
+import { PerformanceTable } from '../../components/Performance'
 
 // Renders any FCR template (see lib/fcrTemplates.js). Layout follows the
 // paper form: black section bars, bordered tables, same row/column labels.
@@ -171,6 +172,18 @@ function MatrixSection({ s, value, onChange, readOnly }) {
   )
 }
 
+// Filled by the app from the TTA plan and final DSR (by BP code); never typed.
+function PerformanceSection({ s, value, loading }) {
+  return (
+    <section className="border border-ink rounded overflow-hidden">
+      <SectionBar title={s.title} right={value?.bp_code ? <span className="hidden sm:inline not-italic font-medium">BP {value.bp_code}</span> : null} />
+      {value ? <PerformanceTable snap={value} /> : (
+        <p className="px-3 py-3 bg-white text-[13px] text-ink-3">{loading ? 'Loading the account target and sales…' : 'No TTA target found for this account and year.'}</p>
+      )}
+    </section>
+  )
+}
+
 function TextSection({ s, value, onChange, readOnly, error }) {
   return (
     <section className={`border rounded overflow-hidden ${error ? 'border-bad' : 'border-ink'}`}>
@@ -206,12 +219,13 @@ export function CustomerInfo({ template, info, visitDate, period, kamName }) {
   )
 }
 
-export function FCRFormBody({ template, formData, onChange, readOnly, errors = {} }) {
+export function FCRFormBody({ template, formData, onChange, readOnly, errors = {}, performanceLoading = false }) {
   const set = (key) => (v) => onChange({ ...formData, [key]: v })
   return (
     <div className="space-y-4">
       {template.sections.map((s) => {
         const value = formData[s.key]
+        if (s.kind === 'performance') return <PerformanceSection key={s.key} s={s} value={value} loading={performanceLoading} />
         if (s.kind === 'text') return <TextSection key={s.key} s={s} value={value} onChange={set(s.key)} readOnly={readOnly} error={errors[s.key]} />
         if (s.kind === 'matrix') return <MatrixSection key={s.key} s={s} value={value} onChange={set(s.key)} readOnly={readOnly} />
         return <GridSection key={s.key} s={s} value={value} onChange={set(s.key)} readOnly={readOnly} />

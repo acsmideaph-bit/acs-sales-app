@@ -7,6 +7,9 @@ import { useAuth } from '../../context/AuthContext'
 import { fmt } from '../../lib/dates'
 import { peso, templateFor } from '../../lib/fcrTemplates'
 import { buildSuggestions } from '../../lib/fcrSuggestions'
+import { fetchPerformance, performanceSnapshot } from '../../lib/targets'
+import { PerformanceTable } from '../../components/Performance'
+import { todayYmd } from '../../lib/dates'
 import { PageHeader, Spinner, StatusChip, AckChip, Empty } from '../../components/ui'
 
 export function AccountDetail() {
@@ -18,6 +21,16 @@ export function AccountDetail() {
   const [parent, setParent] = useState(null)
   const [subs, setSubs] = useState([])
   const [fcrs, setFcrs] = useState([])
+  const [year, setYear] = useState(Number(todayYmd().slice(0, 4)))
+  const [perf, setPerf] = useState(undefined)
+
+  useEffect(() => {
+    if (!account?.bp_code) return
+    setPerf(undefined)
+    fetchPerformance(account.bp_code, year)
+      .then((p) => setPerf(p && p.months.some((m) => m.target != null || m.actual) ? performanceSnapshot(p, year === Number(todayYmd().slice(0, 4)) ? todayYmd() : `${year}-12-01`) : null))
+      .catch(() => setPerf(null))
+  }, [account?.bp_code, year])
 
   useEffect(() => {
     supabase.from('accounts').select('*').eq('id', id).single().then(async ({ data }) => {
@@ -34,13 +47,16 @@ export function AccountDetail() {
   const suggestions = buildSuggestions(approved)
   const info = [
     ['Type', account.account_type === 'sub_dealer' ? 'Sub-dealer' : 'Dealer'],
+    account.account_type === 'sub_dealer' ? null : ['BP code', account.bp_code || <span key="nb" className="text-warn">Not linked to the TTA plan</span>],
+    account.registered_name ? ['Registered name', account.registered_name] : null,
+    account.area ? ['Plan area', account.area] : null,
     ['Owner/s', account.owners], ['Contact no.', account.contact_no], ['Email', account.email],
     ['Address', account.business_address], ['Region', account.region],
     account.account_type === 'sub_dealer'
       ? ['Dealer', parent ? <Link key="p" className="text-accent hover:underline" to={`/accounts/${parent.id}`}>{parent.company_name}</Link> : '—']
       : ['Classification', account.dealer_classification],
     account.account_type === 'sub_dealer' ? null : ['Channel', account.channel],
-    ['KAM', byId[account.kam_id]?.full_name], ['Visit freq / days', account.visit_freq_days], ['Priority', account.priority],
+    [account.account_type === 'sub_dealer' ? 'KAM' : 'KAM this month', byId[account.kam_id]?.full_name], ['Visit freq / days', account.visit_freq_days], ['Priority', account.priority],
     account.account_type === 'sub_dealer' ? null : ['Payment terms', account.payment_terms],
     account.account_type === 'sub_dealer' ? null : ['Credit limit', account.credit_limit != null ? `PHP ${peso(account.credit_limit)}` : ''],
     ['Contact', [account.contact_person, account.contact_designation].filter(Boolean).join(', ')], ['Contact email', account.contact_email],
@@ -58,6 +74,17 @@ export function AccountDetail() {
 
       <div className="grid lg:grid-cols-[1fr_360px] gap-5 items-start">
         <div className="space-y-5 min-w-0">
+          {account.bp_code && (
+            <div className="panel overflow-hidden">
+              <div className="panel-head">
+                <span className="panel-title">Target vs actual sales</span>
+                <select className="input h-7 w-24" value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label="Year">
+                  {[0, -1].map((d) => { const y = Number(todayYmd().slice(0, 4)) + d; return <option key={y}>{y}</option> })}
+                </select>
+              </div>
+              {perf === undefined ? <Spinner /> : perf === null ? <Empty title={`No TTA target for ${year}`}>Targets appear after the admin loads the TTA plan.</Empty> : <PerformanceTable snap={perf} />}
+            </div>
+          )}
           <div className="panel">
             <div className="panel-head"><span className="panel-title">Visit history</span><span className="text-[12px] text-ink-3">{fcrs.length} FCR{fcrs.length === 1 ? '' : 's'} you can see</span></div>
             {fcrs.length === 0 ? <Empty title="No FCRs yet for this account" /> : (

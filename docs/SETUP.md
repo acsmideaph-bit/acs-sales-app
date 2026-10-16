@@ -22,6 +22,11 @@ Everything below is free. Ronald does the account steps (account creation and pa
       select vault.create_secret('<a long random string>', 'cron_secret');
       ```
    4. `supabase/migrations/20261013000002_schedules.sql`
+   5. The later migrations, in file-name order. For the account targets (Oct 16, 2026):
+      `20261016000001_account_targets.sql`, `20261016000002_owner_sync_schedule.sql`, then
+      `supabase/seed/kam_aliases.sql` (plan names → roster emails; git-ignored).
+      Then, in the app, *Admin → Targets and sales*: load the TTA plan, then each month's final DSR.
+      Until the plan is loaded, KAMs cannot file dealer FCRs, so do the two back to back.
 6. Project Settings → API: copy the **Project URL** and the **anon public** key (for step 5). The **service_role** key is only for `scripts/create-users.mjs` on your own computer.
 
 ## 3. Edge Functions

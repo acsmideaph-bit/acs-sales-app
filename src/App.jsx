@@ -23,6 +23,7 @@ import { Census } from './pages/reports/Census'
 import { ExportCenter } from './pages/reports/ExportCenter'
 import { EmailLog } from './pages/reports/EmailLog'
 import { Users } from './pages/admin/Users'
+import { Targets } from './pages/admin/Targets'
 
 function Guard({ children, when = true }) {
   const { user, profile, loading } = useAuth()
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="/reports/export" element={<Guard when={hasTeam}><ExportCenter /></Guard>} />
           <Route path="/reports/email-log" element={<EmailLog />} />
           <Route path="/admin/users" element={<Guard when={isAdmin}><Users /></Guard>} />
+          <Route path="/admin/targets" element={<Guard when={isAdmin}><Targets /></Guard>} />
         </Route>
         <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
       </Routes>

@@ -33,18 +33,18 @@ export function AccountList() {
     return (accounts || []).filter((a) =>
       (type === 'all' || a.account_type === type) &&
       (scope === 'all' || a.kam_id === user.id) &&
-      (!s || [a.company_name, a.owners, a.region, a.business_address, byId[a.kam_id]?.full_name].some((v) => String(v || '').toLowerCase().includes(s))))
+      (!s || [a.company_name, a.bp_code, a.registered_name, a.owners, a.region, a.area, a.business_address, byId[a.kam_id]?.full_name].some((v) => String(v || '').toLowerCase().includes(s))))
   }, [accounts, q, type, scope, user, byId])
 
   return (
     <>
-      <PageHeader title="Accounts" subtitle="Customer master shared by the ACS team. Profile an account once; every FCR and MCP Plan uses it."
-        actions={canWrite && <Link to="/accounts/new" className="btn-primary"><Plus size={15} /> New account</Link>} />
+      <PageHeader title="Accounts" subtitle="Dealers come from the TTA plan (by BP code, KAM per month). Sub-dealers are added by the KAMs who cover them."
+        actions={canWrite && <Link to="/accounts/new" className="btn-primary"><Plus size={15} /> New sub-dealer</Link>} />
       <div className="panel">
         <div className="flex flex-wrap items-center gap-2 p-3 border-b border-line">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" />
-            <input className="input pl-8" placeholder="Search company, owner, region, KAM" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="input pl-8" placeholder="Search name, BP code, owner, region, KAM" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <Segmented value={scope} onChange={setScope} options={[{ value: 'mine', label: 'My accounts' }, { value: 'all', label: 'All' }]} />
           <Segmented value={type} onChange={setType} options={[{ value: 'all', label: 'All types' }, { value: 'dealer', label: 'Dealers' }, { value: 'sub_dealer', label: 'Sub-dealers' }]} />
@@ -58,14 +58,15 @@ export function AccountList() {
           <div className="overflow-x-auto">
             <table className="tbl">
               <thead><tr>
-                <th>Company</th><th>Type</th><th>Region</th><th>Classification / Dealer</th><th>KAM</th><th className="num">Visit freq</th><th>Last approved visit</th>
+                <th>Account</th><th>BP code</th><th>Type</th><th>Area / Region</th><th>Classification / Dealer</th><th>KAM this month</th><th className="num">Visit freq</th><th>Last approved visit</th>
               </tr></thead>
               <tbody>
                 {rows.map((a) => (
                   <tr key={a.id} className="clickable" onClick={() => navigate(`/accounts/${a.id}`)}>
                     <td className="font-medium">{a.company_name}{a.priority && <span className="ml-2 chip-info">{a.priority}</span>}</td>
+                    <td className="tabular-nums text-ink-2">{a.bp_code || (a.account_type === 'dealer' ? <span className="text-warn">Not in plan</span> : '')}</td>
                     <td>{a.account_type === 'sub_dealer' ? 'Sub-dealer' : 'Dealer'}</td>
-                    <td className="text-ink-2">{a.region}</td>
+                    <td className="text-ink-2">{a.region || a.area}</td>
                     <td className="text-ink-2">{a.account_type === 'sub_dealer' ? (accounts.find((p) => p.id === a.parent_dealer_id)?.company_name || '—') : a.dealer_classification}</td>
                     <td className="text-ink-2">{byId[a.kam_id]?.full_name || <span className="text-bad">Unassigned</span>}</td>
                     <td className="num">{a.visit_freq_days}</td>

@@ -18,11 +18,13 @@ flowchart LR
 ## Key Account Managers (KAM)
 
 **Before the month**
-1. *MCP Plan* → **Plan [next month]**. Click a day's **+** to add a visit (account, AM/PM, purpose). *Copy last month* gives you a starting point.
+1. *MCP Plan* → **Plan [next month]**. Click a day's **+** to add a visit (account, AM/PM, purpose). The dealer list is the one the TTA plan gives you **for that month**. *Copy last month* gives you a starting point.
 2. **Submit for approval**. If your RSM returns it, the comment shows at the top; fix and submit again. Need to change an approved plan? **Revise** (it goes back for approval).
 
 **After every visit**
-1. *Field Contact Reports* → **New FCR** → pick the account. The form (ACS or Sub Dealer) follows the account type; the header fills from the account profile.
+1. *Field Contact Reports* → **New FCR** → set the **visit date**, then pick the account. **My dealers** lists the dealers assigned to you in the TTA plan for the month of the visit (by BP code); a dealer that moved to another KAM in that month is not listed. **My sub-dealers** lists the sub-dealers you added. Visiting a new sub-dealer? Click **+ Sub-dealer**, enter it under one of your dealers, and it is selected for the FCR. Dealers cannot be typed in: if one is missing, ask the ACS admin to check the TTA plan.
+   - The form (ACS or Sub Dealer) follows the account type; the header fills from the account profile.
+   - Dealer FCRs open with **Sales Update – Account Target vs Actual Sales**: the target for the visit month, the quarter and the year (TTA plan), and actual **RAC, LC and Window AC** sales per month from the final DSR (MBT sales to the same account are not ACS sales and are left out). Use it to discuss the account's performance. The customer sees the same figures in the minutes.
 2. Fill the sections you covered. Get-Back Items and Coverage Notes are what the customer will read most closely. *Preview minutes* shows exactly what they will see.
 3. **Take the visit photo** with the customer (ask them first). One photo per FCR, and it is **required** before you can send for acknowledgement. Photos are taken **only on a phone, with the app's live camera**. There is no gallery and no file upload. **Location is required**: allow it when asked, or the shutter stays off. The time, your name and the place are stamped on the photo. Started the FCR on a laptop? Tap **Take the photo on my phone**, scan the QR code, sign in on the phone if asked, and the FCR opens at the photo step. The laptop page shows the photo by itself once it's saved. You can retake it until the request goes out; after that it is locked.
    - If you edit the same FCR on two devices, the app stops the older one from overwriting the newer save and asks you to reload.
@@ -57,10 +59,11 @@ Same reports for your whole branch, grouped by RSM. You receive the Friday and m
 
 - Admins see every record and every report across all of ACS, and receive the Friday and monthly digest for the whole team (subject "All ACS"). Approvals stay with each KAM's RSM.
 - *Users and org chart*: edit the roster (role, team, **Reports to**, digest email) → **Save and sync**. Click a user's access chip to make them read-only. New people also need a login (see docs/SETUP.md step 4).
+- *Targets and sales*: **TTA plan** – upload the ACS Master Monitoring (TTA plan) file, CSV or Excel. The page checks it first (dealers, totals, KAMs per month, names not yet mapped to a person) and loads only when nothing blocks it. Dealers are created or updated by **BP code**. The first load covers the whole year; later loads replace the current month to December, and restating past months needs a reason. **Monthly DSR** – upload the final DSR of a month; the app sums **Actual Sales** per **BP Code** for **RAC, LC and Window AC lines only**. It shows every product group in the file with its amount; MBT is always left out, and an unfamiliar group name can be counted as RAC, LC or Window AC only if you say so. A DSR without a product-group column will not load. Loading a month again replaces it. **Plan names** maps the names in the plan (e.g. "HADJIE TECSON") to people; **History** lists every upload.
 - *Delete an FCR* (duplicates, test entries, wrong account): open the FCR → **Delete** → type the reason. The FCR, its photo and its request history are removed for everyone; a full copy is kept in the admin-only deletion log (`fcr_deletions`). Cannot be undone from the app.
 - *Email log*: every email attempt. **Preview weekly/monthly** and **Test weekly to me** before launch and after any change.
 
 ## Everyone
 
 - *Account* (bottom left): change your password; set a different address for report emails.
-- Accounts are shared across the team. Search **All** before creating one, to avoid duplicates.
+- Accounts are shared across the team. Dealers come only from the TTA plan (BP code, KAM per month); their name and BP code can't be edited in the app. KAMs add sub-dealers, under a dealer they hold that month. A sub-dealer follows its dealer when the dealer moves to another KAM. Search **All** before adding one, to avoid duplicates.
