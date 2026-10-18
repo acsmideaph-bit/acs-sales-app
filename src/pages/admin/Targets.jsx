@@ -288,39 +288,51 @@ function AliasMapper({ labels, roster, onSaved }) {
 
 function DsrUpload({ onApplied }) {
   const [month, setMonth] = useState(lastMonth().slice(0, 7))
+  const [year, setYear] = useState(Number(todayYmd().slice(0, 4)))
   const [file, setFile] = useState(null)
-  const [sheet, setSheet] = useState(null)      // { name, rows } of the sheet that holds the DSR
+  const [sheet, setSheet] = useState(null)      // { name, rows } of the sheet that holds the sales
   const [catCol, setCatCol] = useState(null)    // chosen product-group column, when not detected
   const [remap, setRemap] = useState({})        // unfamiliar group name -> 'RAC' | 'LC' | 'WINDOW'
-  const [server, setServer] = useState(null)
+  const [checks, setChecks] = useState(null)    // dry-run result per month
   const [busy, setBusy] = useState('')
-  const mon = `${month}-01`
 
-  // Only RAC, LC and Window lines are ACS sales; parse again whenever the column or
-  // the group mapping changes.
+  // Only RAC, LC and Window lines are ACS sales; parse again whenever the
+  // column or the group mapping changes. Files with a Month column (the SAP
+  // gross-sales flat file) load every month they contain; a single-month DSR
+  // uses the month picked here.
   const parsed = useMemo(() => {
     if (!sheet) return null
-    try { return { ...parseDsr(sheet.rows, { categoryCol: catCol, remap }), sheet: sheet.name } } catch (e) { return { error: e.message } }
-  }, [sheet, catCol, remap])
+    try { return { ...parseDsr(sheet.rows, { categoryCol: catCol, remap, year }), sheet: sheet.name } } catch (e) { return { error: e.message } }
+  }, [sheet, catCol, remap, year])
   const ready = parsed && !parsed.error && !parsed.needsCategory
-  const categoriesPayload = ready ? {
+  const loads = useMemo(() => {
+    if (!ready) return []
+    if (parsed.multiMonth) return parsed.months
+    const m = parsed.months[0] || { rows: [], lines: 0, total: 0, excludedTotal: 0, categories: [] }
+    return [{ ...m, month: `${month}-01` }]
+  }, [ready, parsed, month])
+  const payloadFor = (m) => ({
     column: parsed.columns.category,
     included: ACS_CATEGORIES,
-    groups: parsed.categories.map((c) => ({ category: c.category, counted_as: c.included ? c.countedAs : null, lines: c.lines, amount: c.amount })),
-  } : null
+    groups: m.categories.map((c) => ({ category: c.category, counted_as: c.included ? c.countedAs : null, lines: c.lines, amount: c.amount })),
+  })
+  const future = loads.filter((m) => m.month > thisMonth())
 
   useEffect(() => {
-    if (!ready) { setServer(null); return }
+    if (!loads.length) { setChecks(null); return }
     let live = true
     setBusy('check')
-    rpc('import_sales_actuals', { p_month: mon, p_rows: parsed.rows, p_file_name: file?.name, p_dry_run: true, p_categories: categoriesPayload })
-      .then((r) => live && setServer(r)).catch((e) => { if (live) { setServer(null); toast.error(e.message) } })
+    Promise.all(loads.map((m) => (m.month > thisMonth()
+      ? Promise.resolve({ month: m.month, errors: [{ type: 'future' }] })
+      : rpc('import_sales_actuals', { p_month: m.month, p_rows: m.rows, p_file_name: file?.name, p_dry_run: true, p_categories: payloadFor(m) }))))
+      .then((r) => live && setChecks(Object.fromEntries(r.map((x, i) => [loads[i].month, x]))))
+      .catch((e) => { if (live) { setChecks(null); toast.error(e.message) } })
       .finally(() => live && setBusy(''))
     return () => { live = false }
-  }, [parsed, mon]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loads]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onFile = async (f) => {
-    setFile(f); setSheet(null); setCatCol(null); setRemap({}); setServer(null); setBusy('read')
+    setFile(f); setSheet(null); setCatCol(null); setRemap({}); setChecks(null); setBusy('read')
     try {
       const sheets = await readWorkbookRows(f)
       let found = null; let lastErr = null
@@ -330,33 +342,53 @@ function DsrUpload({ onApplied }) {
     } catch (e) { toast.error(e.message) } finally { setBusy('') }
   }
 
+  const errorsFor = (m) => (checks?.[m.month]?.errors || [])
+  const blocked = !checks || loads.some((m) => errorsFor(m).length > 0) || !loads.some((m) => m.rows.length)
+  const replacing = loads.filter((m) => checks?.[m.month]?.replaces_existing)
+  const span = loads.length > 1 ? `${monthName(loads[0].month)} to ${monthName(loads.at(-1).month)}` : loads[0] ? monthName(loads[0].month) : ''
+
   const apply = async () => {
+    const total = loads.reduce((s, m) => s + m.total, 0)
     const ok = await confirm({
-      title: `Load the final DSR for ${monthName(mon)}?`,
-      body: `${parsed.rows.length} BP codes, ${fmtPeso(parsed.total)} ACS actual sales (RAC, LC, Window AC). ${fmtPeso(parsed.excludedTotal)} in other groups (MBT and others) is left out.${server?.replaces_existing ? ` This replaces the ${monthName(mon)} sales already loaded.` : ''}`,
+      title: `Load actual sales for ${span}?`,
+      body: `${loads.length} month${loads.length === 1 ? '' : 's'}, ${fmtPeso(total)} ACS actual sales (RAC, LC, Window AC). ${fmtPeso(parsed.excludedTotal)} in other groups (MBT, parts and others) is left out.${replacing.length ? ` Replaces ${replacing.length} month${replacing.length === 1 ? '' : 's'} already loaded.` : ''}`,
       confirmLabel: 'Load sales',
     })
     if (!ok) return
     setBusy('apply')
+    let done = 0
     try {
-      const r = await rpc('import_sales_actuals', { p_month: mon, p_rows: parsed.rows, p_file_name: file?.name, p_dry_run: false, p_categories: categoriesPayload })
-      if (!r.applied) { setServer(r); toast.error('Not loaded: fix the issues listed'); return }
-      toast.success(`${monthName(mon)} sales loaded`)
-      setSheet(null); setServer(null); setFile(null)
+      for (const m of loads) {
+        const r = await rpc('import_sales_actuals', { p_month: m.month, p_rows: m.rows, p_file_name: file?.name, p_dry_run: false, p_categories: payloadFor(m) })
+        if (!r.applied) { toast.error(`${monthName(m.month)} not loaded: ${(r.errors || []).map(errText).join('; ')}`); break }
+        done++
+      }
+      if (done) toast.success(`${done} month${done === 1 ? '' : 's'} of sales loaded`)
+      if (done === loads.length) { setSheet(null); setChecks(null); setFile(null) }
       onApplied()
-    } catch (e) { toast.error(e.message) } finally { setBusy('') }
+    } catch (e) { toast.error(`${done} month${done === 1 ? '' : 's'} loaded, then: ${e.message}`) } finally { setBusy('') }
   }
 
+  const n0 = (v) => Number(v || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })
   return (
     <div className="panel">
-      <div className="panel-head"><span className="panel-title">Final DSR: official monthly sales</span></div>
+      <div className="panel-head"><span className="panel-title">Actual sales: final DSR / SAP gross-sales file</span></div>
       <div className="p-4 space-y-4">
-        <p className="text-[13px] text-ink-3 max-w-3xl">Upload the final DSR of a month. The app sums <strong className="text-ink-2">Actual Sales</strong> per <strong className="text-ink-2">BP Code</strong> for <strong className="text-ink-2">RAC, LC and Window AC only</strong>; MBT sales to the same account are not ACS sales and are left out. Loading a month again replaces that month.</p>
+        <p className="text-[13px] text-ink-3 max-w-3xl">Upload the final DSR of a month, or the SAP gross-sales flat file (several months; each month in it is loaded). The app sums <strong className="text-ink-2">Actual Sales</strong> (or <strong className="text-ink-2">Gross Sales</strong>, actual scenario only) per <strong className="text-ink-2">BP Code</strong> for <strong className="text-ink-2">RAC, LC and Window AC only</strong>; MBT, spare parts and other groups are left out unless you say otherwise. Loading a month again replaces that month.</p>
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Sales month">
-            <input type="month" className="input w-44" max={todayYmd().slice(0, 7)} value={month} onChange={(e) => setMonth(e.target.value)} />
-          </Field>
-          <FilePick onFile={onFile} label={file ? 'Choose another file' : 'Choose DSR file'} />
+          {!parsed?.multiMonth && (
+            <Field label="Sales month">
+              <input type="month" className="input w-44" max={todayYmd().slice(0, 7)} value={month} onChange={(e) => setMonth(e.target.value)} />
+            </Field>
+          )}
+          {parsed?.multiMonth && !parsed.columns.year && (
+            <Field label="Year (file has no Year column)">
+              <select className="input w-28" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+                {[year - 1, year, year + 1].map((y) => <option key={y}>{y}</option>)}
+              </select>
+            </Field>
+          )}
+          <FilePick onFile={onFile} label={file ? 'Choose another file' : 'Choose sales file'} />
           {file && <span className="text-[12px] text-ink-3 pb-2">{file.name}</span>}
         </div>
         {busy === 'read' && <Spinner label="Reading file" />}
@@ -370,7 +402,11 @@ function DsrUpload({ onApplied }) {
                 {parsed.headers.map((h) => <option key={h.index} value={h.index}>{h.label}</option>)}
               </select>
             </Field>
-            <p className="text-[12px] text-ink-3 pb-2">Sheet <strong className="text-ink-2">{parsed.sheet}</strong>, header on line {parsed.columns.headerLine}: BP "{parsed.columns.bp}", amount "{parsed.columns.amount}".</p>
+            <p className="text-[12px] text-ink-3 pb-2">
+              Sheet <strong className="text-ink-2">{parsed.sheet}</strong>, header on line {parsed.columns.headerLine}: BP "{parsed.columns.bp}", amount "{parsed.columns.amount}"
+              {parsed.columns.month && <>, month "{parsed.columns.month}"{parsed.columns.year && <> / "{parsed.columns.year}"</>}</>}
+              {parsed.columns.scenario && <>, actual scenario only ("{parsed.columns.scenario}")</>}.
+            </p>
           </div>
         )}
         {parsed?.needsCategory && <Notes title="Product group not found" tone="bad" items={['No column with RAC, LC, Window or MBT values was found. Choose the column that tells them apart. Without it the app cannot leave MBT sales out, so the file will not load.']} />}
@@ -379,20 +415,20 @@ function DsrUpload({ onApplied }) {
           <>
             <div className="border border-line rounded overflow-x-auto">
               <table className="tbl">
-                <thead><tr><th>Group in file</th><th>Values seen</th><th className="!text-right">Lines</th><th className="!text-right">Actual sales (PHP)</th><th>Counted for ACS</th></tr></thead>
+                <thead><tr><th>Group in file</th><th>Values seen</th><th className="!text-right">Lines</th><th className="!text-right">Sales (PHP)</th><th>Counted for ACS</th></tr></thead>
                 <tbody>
                   {parsed.categories.map((c) => {
                     const fixed = ['RAC', 'LC', 'WINDOW', 'MBT'].includes(c.category)
                     return (
                       <tr key={c.category}>
-                        <td className="font-medium">{c.category}</td>
+                        <td className="font-medium">{CATEGORY_LABELS[c.category] || c.category}</td>
                         <td className="text-ink-3 text-[12px]">{c.raw.join(', ')}</td>
-                        <td className="text-right tabular-nums">{c.lines}</td>
+                        <td className="text-right tabular-nums">{c.lines.toLocaleString('en-PH')}</td>
                         <td className="text-right tabular-nums">{c.amount.toLocaleString('en-PH', { maximumFractionDigits: 2 })}</td>
                         <td>
                           {fixed ? (c.included ? <span className="chip-approved">Yes · {CATEGORY_LABELS[c.category] || c.category}</span> : <span className="chip-draft">No · not ACS</span>) : (
-                            <select className="input h-7 w-44" value={remap[c.category] || ''} onChange={(e) => setRemap((m) => ({ ...m, [c.category]: e.target.value || undefined }))}>
-                              <option value="">No · not ACS</option>
+                            <select className="input h-7 w-48" value={remap[c.category] || ''} onChange={(e) => setRemap((m) => ({ ...m, [c.category]: e.target.value || undefined }))}>
+                              <option value="">No · not counted</option>
                               <option value="RAC">Yes · count as RAC</option>
                               <option value="LC">Yes · count as LC</option>
                               <option value="WINDOW">Yes · count as Window AC</option>
@@ -405,18 +441,45 @@ function DsrUpload({ onApplied }) {
                 </tbody>
               </table>
             </div>
-            <Kv items={[
-              ['ACS lines', parsed.lines],
-              ['BP codes', parsed.rows.length],
-              ['ACS actual sales', fmtPeso(parsed.total)],
-              ['ACS dealers in file', server ? `${server.in_plan} · ${fmtPeso(server.in_plan_total)}` : '…'],
-            ]} />
-            {server?.replaces_existing && <Notes title="Replaces" items={[`${monthName(mon)} sales are already loaded. Loading this file replaces them.`]} />}
-            <Notes title="Fix before loading" tone="bad" items={(server?.errors || []).map(errText)} />
+
+            <div className="border border-line rounded overflow-x-auto">
+              <table className="tbl">
+                <thead><tr><th>Month</th><th className="!text-right">ACS lines</th><th className="!text-right">BP codes</th><th className="!text-right">ACS sales (PHP)</th><th className="!text-right">Left out (PHP)</th><th className="!text-right">ACS plan dealers</th><th>Load</th></tr></thead>
+                <tbody>
+                  {loads.map((m) => {
+                    const c = checks?.[m.month]
+                    const errs = errorsFor(m)
+                    return (
+                      <tr key={m.month}>
+                        <td className="font-medium whitespace-nowrap">{monthName(m.month)}</td>
+                        <td className="text-right tabular-nums">{m.lines.toLocaleString('en-PH')}</td>
+                        <td className="text-right tabular-nums">{m.rows.length}</td>
+                        <td className="text-right tabular-nums">{n0(m.total)}</td>
+                        <td className="text-right tabular-nums text-ink-3">{n0(m.excludedTotal)}</td>
+                        <td className="text-right tabular-nums">{c && !errs.length ? `${c.in_plan} · ${n0(c.in_plan_total)}` : ''}</td>
+                        <td className="whitespace-nowrap">{!c ? <span className="text-ink-4">…</span> : errs.length ? <span className="chip-rejected">{errs[0].type === 'future' ? 'Future month' : 'Issue'}</span> : c.replaces_existing ? <span className="chip-pending">Replaces loaded</span> : <span className="chip-approved">New</span>}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                {loads.length > 1 && (
+                  <tfoot><tr className="font-semibold">
+                    <td className="px-3 py-2">Total</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{parsed.lines.toLocaleString('en-PH')}</td>
+                    <td />
+                    <td className="px-3 py-2 text-right tabular-nums">{n0(parsed.total)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-ink-3">{n0(parsed.excludedTotal)}</td>
+                    <td colSpan={2} />
+                  </tr></tfoot>
+                )}
+              </table>
+            </div>
+            {future.length > 0 && <Notes title="Fix before loading" tone="bad" items={[`${future.map((m) => monthName(m.month)).join(', ')} is in the future.`]} />}
+            <Notes title="Fix before loading" tone="bad" items={loads.flatMap((m) => errorsFor(m).filter((e) => e.type !== 'future').map((e) => `${monthName(m.month)}: ${errText(e)}`))} />
             <Notes title="Skipped lines" items={parsed.warnings.slice(0, 20).map((w) => w.text).concat(parsed.warnings.length > 20 ? [`and ${parsed.warnings.length - 20} more`] : [])} />
             <div className="flex justify-end gap-2">
               {busy === 'check' && <span className="text-[12px] text-ink-3">Checking…</span>}
-              <button className="btn-primary" disabled={!server || Boolean(busy) || (server.errors || []).length > 0 || !parsed.rows.length} onClick={apply}>{busy === 'apply' ? 'Loading…' : 'Load sales'}</button>
+              <button className="btn-primary" disabled={blocked || Boolean(busy)} onClick={apply}>{busy === 'apply' ? 'Loading…' : loads.length > 1 ? `Load ${loads.length} months` : 'Load sales'}</button>
             </div>
           </>
         )}

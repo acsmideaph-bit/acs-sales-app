@@ -41,7 +41,7 @@ export function PerformanceTable({ snap, highlight }) {
     [`Target, ${snap.quarter} ${snap.year}`, php0(snap.quarter_target)],
     [`FY ${snap.year} TTA target`, php0(snap.fy_target)],
     snap.as_of
-      ? [`Actual ACS sales, Jan–${short(snap.as_of)}`, `${php0(snap.ytd_actual)}`, `${pct(ytdPct)} of ${php0(snap.ytd_target)} target`]
+      ? [`Actual, Jan–${short(snap.as_of)}`, `${php0(snap.ytd_actual)}`, `${pct(ytdPct)} of ${php0(snap.ytd_target)} target`]
       : ['Actual sales', 'No final DSR loaded yet'],
   ]
   return (

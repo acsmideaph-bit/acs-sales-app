@@ -146,20 +146,29 @@ export const planPayload = (parsed) => parsed.rows.map(({ bp_code, account, regi
 // ---------------------------------------------------------------------------
 
 const isBpHeader = (x) => /^(BP|B\.P\.)\s*(CODE|NO\.?|NUMBER|#)$/.test(x) || x === 'BP CODE' || x === 'CUSTOMER BP CODE'
+// The official amount: "Actual Sales" in the monthly DSR, "GROSS SALES" in the
+// SAP gross-sales flat file (scenario ACT). Actual Sales wins when both exist.
 const isActualHeader = (x) => x === 'ACTUAL SALES' || /^ACTUAL SALES\b/.test(x)
+const isGrossHeader = (x) => x === 'GROSS SALES' || /^GROSS SALES\b/.test(x)
+const isAmountHeader = (x) => isActualHeader(x) || isGrossHeader(x)
 
 // Only RAC, LC and Window AC sales are credited to ACS (Window added Oct 16,
-// 2026); MBT (and anything else) sold to
-// the same BP code is not ACS sales (Ronald, Oct 16, 2026). The DSR's
-// product-group column is found by its values; every group is shown with its
-// amount, and only the included ones are summed. No product-group column =
-// refuse, rather than silently count MBT.
+// 2026); MBT (and anything else) sold to the same BP code is not ACS sales
+// (Ronald, Oct 16, 2026). The product-group column is found by its values;
+// every group is shown with its amount, and only the included ones are summed.
+// No product-group column = refuse, rather than silently count MBT.
+// In the SAP flat file the group is "Product Line": HW (high wall = RAC),
+// LC, WRAC (window), Parts, Portable.
 export const ACS_CATEGORIES = ['RAC', 'LC', 'WINDOW']
-export const CATEGORY_LABELS = { RAC: 'RAC', LC: 'LC', WINDOW: 'Window AC', MBT: 'MBT' }
+export const CATEGORY_LABELS = { RAC: 'RAC (high wall)', LC: 'LC', WINDOW: 'Window AC', MBT: 'MBT', PARTS: 'Spare parts', PORTABLE: 'Portable AC' }
 const CATEGORY_ALIASES = {
-  RAC: ['RAC', 'ROOM AIR CONDITIONER', 'ROOM AIR CONDITIONERS', 'ROOM AIRCON', 'RESIDENTIAL AIR CONDITIONER', 'RESIDENTIAL AC'],
-  LC: ['LC', 'LCAC', 'LIGHT COMMERCIAL', 'LIGHT COMMERCIAL AC', 'LIGHT COMMERCIAL AIR CONDITIONER'],
-  WINDOW: ['WINDOW', 'WINDOW AC', 'WINDOW TYPE', 'WINDOW TYPE AC', 'WINDOW TYPE AIRCON', 'WINDOW TYPE AIR CONDITIONER', 'WINDOW AIRCON', 'WINDOW AIR CONDITIONER', 'WINDOW-TYPE', 'WAC', 'WRAC'],
+  RAC: ['RAC', 'HW', 'HIGH WALL', 'HIGHWALL', 'HI WALL', 'HIGH WALL INVERTER', 'HIGH WALL NON INVERTER', 'HIGH WALL NON-INVERTER',
+    'ROOM AIR CONDITIONER', 'ROOM AIR CONDITIONERS', 'ROOM AIRCON', 'RESIDENTIAL AIR CONDITIONER', 'RESIDENTIAL AC'],
+  LC: ['LC', 'LCAC', 'LIGHT COMMERCIAL', 'LIGHT COMMERCIAL AC', 'LIGHT COMMERCIAL AIR CONDITIONER', 'LC FLOOR MOUNTED', 'LC CASSETTE', 'LC UNDER CEILING'],
+  WINDOW: ['WINDOW', 'WINDOW AC', 'WINDOW TYPE', 'WINDOW TYPE AC', 'WINDOW TYPE AIRCON', 'WINDOW TYPE AIR CONDITIONER', 'WINDOW AIRCON',
+    'WINDOW AIR CONDITIONER', 'WINDOW-TYPE', 'WAC', 'WRAC', 'WRAC REMOTE', 'WRAC INV', 'WRAC MANUAL', 'WINDOW INVERTER'],
+  PARTS: ['PARTS', 'SPARE PARTS', 'RAC SPARE PARTS', 'ACS - PARTS'],
+  PORTABLE: ['PORTABLE', 'PORTABLE AC', 'PORTABLE AIR CONDITIONER'],
   MBT: ['MBT', 'MIDEA BUILDING TECHNOLOGIES', 'MIDEA BUILDING TECHNOLOGY'],
 }
 const KNOWN = new Map(Object.entries(CATEGORY_ALIASES).flatMap(([k, list]) => list.map((v) => [v, k])))
@@ -168,62 +177,127 @@ export const categoryOf = (v) => {
   return KNOWN.get(n) || n || '(blank)'
 }
 
-// The column whose values are mostly RAC / LC / Window / MBT (by alias).
+// The column that best separates the product groups: most distinct known
+// groups, then most rows recognised; "Product Line" wins a tie. A column that
+// only ever says one group (e.g. Product Category = RAC on every row) loses to
+// one that tells HW, LC and WRAC apart.
 function detectCategoryColumn(rows, h, skip) {
-  let best = -1; let bestHits = 0
+  let best = -1; let bestScore = [0, 0, 0]
   const width = Math.max(...rows.slice(h.index, h.index + 400).map((r) => (r || []).length))
   for (let c = 0; c < width; c++) {
     if (skip.includes(c)) continue
     let hits = 0
-    for (let r = h.index + 1; r < Math.min(rows.length, h.index + 2000); r++) if (KNOWN.has(norm(rows[r]?.[c]))) hits++
-    if (hits > bestHits) { best = c; bestHits = hits }
+    const groups = new Set()
+    for (let r = h.index + 1; r < Math.min(rows.length, h.index + 5000); r++) {
+      const k = KNOWN.get(norm(rows[r]?.[c]))
+      if (k) { hits++; groups.add(k) }
+    }
+    const score = [groups.size, hits, h.cells[c] === 'PRODUCT LINE' ? 1 : 0]
+    const better = score[0] > bestScore[0] || (score[0] === bestScore[0] && (score[2] > bestScore[2] || (score[2] === bestScore[2] && score[1] > bestScore[1])))
+    if (hits > 0 && better) { best = c; bestScore = score }
   }
-  return bestHits > 0 ? best : -1
+  return best
 }
 
-export function parseDsr(rows, { categoryCol = null, include = ACS_CATEGORIES, remap = {} } = {}) {
-  const h = findHeader(rows, (c) => c.some(isBpHeader) && c.some(isActualHeader), 60)
-  if (!h) throw new Error('Could not find the "BP Code" and "Actual Sales" columns in this file.')
+const MONTH_WORDS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+function monthNumber(v) {
+  if (v == null || v === '') return null
+  if (typeof v === 'number' && v >= 1 && v <= 12) return Math.round(v)
+  const s = norm(v)
+  const i = MONTH_WORDS.findIndex((m) => s.startsWith(m))
+  if (i >= 0) return i + 1
+  const n = Number(s.replace(/^P/, ''))
+  return Number.isInteger(n) && n >= 1 && n <= 12 ? n : null
+}
+const ym = (y, m) => `${y}-${String(m).padStart(2, '0')}-01`
+
+// Options: categoryCol (index), include (groups counted for ACS), remap
+// ({ group: 'RAC'|'LC'|'WINDOW' } for unfamiliar names), year (used when the
+// file has a Month column but no Year column).
+export function parseDsr(rows, { categoryCol = null, include = ACS_CATEGORIES, remap = {}, year = null } = {}) {
+  const h = findHeader(rows, (c) => c.some(isBpHeader) && c.some(isAmountHeader), 60)
+  if (!h) throw new Error('Could not find a "BP Code" column and an "Actual Sales" or "Gross Sales" column in this file.')
   const bpIx = h.cells.findIndex(isBpHeader)
-  const exact = h.cells.findIndex((x) => x === 'ACTUAL SALES')
-  const amtIx = exact >= 0 ? exact : h.cells.findIndex(isActualHeader)
-  const catIx = categoryCol ?? detectCategoryColumn(rows, h, [bpIx, amtIx])
+  const actualIx = h.cells.findIndex(isActualHeader)
+  const amtIx = actualIx >= 0 ? actualIx : h.cells.findIndex(isGrossHeader)
+  const monthIx = h.cells.findIndex((x) => x === 'MONTH' || x === 'PERIOD' || x === 'FISCAL MONTH')
+  const yearIx = h.cells.findIndex((x) => x === 'YEAR' || x === 'FISCAL YEAR')
+  const scenarioIx = h.cells.findIndex((x) => x === 'SCENARIO')
+  const catIx = categoryCol ?? detectCategoryColumn(rows, h, [bpIx, amtIx, monthIx, yearIx, scenarioIx])
+  // Any other column that names MBT on a row (Product Category, Type, BU...)
+  // makes that row MBT, whatever the product-group column says.
+  const guardIx = h.cells.map((x, i) => (i !== catIx && /CATEGORY|TYPE|LINE|\bBU\b|BUSINESS|DIVISION|SEGMENT|GROUP/.test(x) ? i : -1)).filter((i) => i >= 0)
   const headers = (rows[h.index] || []).map((v, i) => ({ index: i, label: String(v ?? '').trim() || `Column ${i + 1}` }))
-  const base = { columns: { bp: rows[h.index][bpIx], amount: rows[h.index][amtIx], category: catIx >= 0 ? headers[catIx]?.label : null, categoryIndex: catIx, headerLine: h.index + 1 }, headers }
-  if (catIx < 0) {
-    return { ...base, needsCategory: true, rows: [], warnings: [], lines: 0, total: 0, categories: [] }
+  const label = (i) => (i >= 0 ? headers[i]?.label : null)
+  const base = {
+    columns: { bp: label(bpIx), amount: label(amtIx), category: label(catIx), categoryIndex: catIx, month: label(monthIx), year: label(yearIx), scenario: label(scenarioIx), headerLine: h.index + 1 },
+    headers, multiMonth: monthIx >= 0,
   }
+  if (catIx < 0) return { ...base, needsCategory: true, months: [], rows: [], warnings: [], lines: 0, total: 0, categories: [] }
 
   const inc = new Set(include)
-  const by = new Map()
+  const months = new Map()   // 'yyyy-mm-01' (or 'single') -> { by: Map, cats: Map, lines }
   const cats = new Map()
   const warnings = []
+  let skippedScenario = 0
   let lines = 0
+  const bucket = (k) => { if (!months.has(k)) months.set(k, { month: k === 'single' ? null : k, by: new Map(), cats: new Map(), lines: 0 }); return months.get(k) }
+  const addCat = (map, found, countedAs, raw, a) => {
+    const cs = map.get(found) || { category: found, countedAs, raw: new Set(), lines: 0, amount: 0, included: inc.has(countedAs) }
+    cs.raw.add(raw); cs.lines += 1; cs.amount += a
+    map.set(found, cs)
+  }
   for (let r = h.index + 1; r < rows.length; r++) {
     const row = rows[r] || []
     const bp = bpCode(row[bpIx])
-    const a = amount(row[amtIx])
     if (!bp) continue // subtotal / blank rows
+    if (scenarioIx >= 0 && !/ACT/.test(norm(row[scenarioIx]))) { skippedScenario++; continue }
+    const a = amount(row[amtIx])
     if (!/^[0-9A-Za-z-]{3,20}$/.test(bp)) { warnings.push({ line: r + 1, type: 'bad_bp_code', text: `Line ${r + 1}: "${bp}" is not a BP code, skipped` }); continue }
     if (a == null) continue
-    if (Number.isNaN(a)) { warnings.push({ line: r + 1, type: 'bad_amount', text: `Line ${r + 1}: Actual Sales for ${bp} is not a number, skipped` }); continue }
-    const found = categoryOf(row[catIx])
-    const cat = remap[found] || found   // an admin may count an unfamiliar group name as RAC, LC or Window
-    const cs = cats.get(found) || { category: found, countedAs: cat, raw: new Set(), lines: 0, amount: 0, included: inc.has(cat) }
-    cs.raw.add(String(row[catIx] ?? '').trim() || '(blank)'); cs.lines += 1; cs.amount += a
-    cats.set(found, cs)
+    if (Number.isNaN(a)) { warnings.push({ line: r + 1, type: 'bad_amount', text: `Line ${r + 1}: amount for ${bp} is not a number, skipped` }); continue }
+    let key = 'single'
+    if (monthIx >= 0) {
+      const m = monthNumber(row[monthIx])
+      const y = yearIx >= 0 ? Number(row[yearIx]) : year
+      if (!m || !y) { warnings.push({ line: r + 1, type: 'bad_month', text: `Line ${r + 1}: month "${row[monthIx] ?? ''}" / year "${yearIx >= 0 ? row[yearIx] ?? '' : year ?? ''}" not understood, skipped` }); continue }
+      key = ym(y, m)
+    }
+    const mbt = guardIx.some((i) => KNOWN.get(norm(row[i])) === 'MBT')
+    const found = mbt ? 'MBT' : categoryOf(row[catIx])
+    const cat = mbt ? 'MBT' : (remap[found] || found)   // an admin may count an unfamiliar group name as RAC, LC or Window
+    const raw = String(row[catIx] ?? '').trim() || '(blank)'
+    const b = bucket(key)
+    addCat(cats, found, cat, raw, a)
+    addCat(b.cats, found, cat, raw, a)
     if (!inc.has(cat)) continue
-    const cur = by.get(bp) || { bp_code: bp, amount: 0, lines: 0 }
-    cur.amount += a; cur.lines += 1; lines += 1
-    by.set(bp, cur)
+    const cur = b.by.get(bp) || { bp_code: bp, amount: 0, lines: 0 }
+    cur.amount += a; cur.lines += 1; b.lines += 1; lines += 1
+    b.by.set(bp, cur)
   }
-  const out = [...by.values()].map((x) => ({ ...x, amount: Math.round(x.amount * 100) / 100 }))
-  const categories = [...cats.values()]
+  if (skippedScenario) warnings.push({ type: 'scenario', text: `${skippedScenario} line${skippedScenario === 1 ? '' : 's'} not in an actual (ACT) scenario were left out` })
+
+  const finishCats = (map) => [...map.values()]
     .map((c) => ({ ...c, raw: [...c.raw].slice(0, 5), amount: Math.round(c.amount * 100) / 100 }))
-    .sort((a, b) => Number(b.included) - Number(a.included) || b.amount - a.amount)
+    .sort((x, y) => Number(y.included) - Number(x.included) || y.amount - x.amount)
+  const monthList = [...months.values()]
+    .map((b) => {
+      const out = [...b.by.values()].map((x) => ({ ...x, amount: Math.round(x.amount * 100) / 100 }))
+      const categories = finishCats(b.cats)
+      return {
+        month: b.month, rows: out, lines: b.lines, categories,
+        total: out.reduce((s, x) => s + x.amount, 0),
+        excludedTotal: categories.filter((c) => !c.included).reduce((s, c) => s + c.amount, 0),
+      }
+    })
+    .sort((x, y) => String(x.month).localeCompare(String(y.month)))
+  const categories = finishCats(cats)
+  const single = monthList.length === 1 && !base.multiMonth ? monthList[0] : null
   return {
-    ...base, rows: out, warnings, lines, categories, include: [...inc],
-    total: out.reduce((s, x) => s + x.amount, 0),
+    ...base, months: monthList, warnings, lines, categories, include: [...inc],
+    // single-month files keep the flat shape the page used before
+    rows: single ? single.rows : monthList.flatMap((m) => m.rows),
+    total: monthList.reduce((s, m) => s + m.total, 0),
     excludedTotal: categories.filter((c) => !c.included).reduce((s, c) => s + c.amount, 0),
   }
 }
