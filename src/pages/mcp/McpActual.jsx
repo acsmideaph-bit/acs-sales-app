@@ -1,11 +1,10 @@
-import { FILER_ROLES } from '../../lib/roles'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ChevronLeft, ChevronRight, FileDown, ArrowLeft } from 'lucide-react'
 import { format, addMonths } from 'date-fns'
 import { supabase } from '../../lib/supabase'
-import { fetchAccounts, fetchBranch, useProfiles } from '../../lib/data'
+import { fetchAccounts, fetchFilers, useProfiles } from '../../lib/data'
 import { useAuth } from '../../context/AuthContext'
 import { fmt, toDate, todayYmd } from '../../lib/dates'
 import { fetchActualVisits, fetchPlans, fetchDailyNotes, saveDailyNote, buildSnapshot, monthLabel } from '../../lib/mcp'
@@ -51,7 +50,7 @@ function TeamRoster({ month, byId, onOpen }) {
   const [rows, setRows] = useState(null)
   useEffect(() => {
     (async () => {
-      const branch = (await fetchBranch()).filter((b) => FILER_ROLES.includes(b.role))
+      const branch = await fetchFilers()
       const ids = branch.map((b) => b.id)
       const [visits, plans] = await Promise.all([fetchActualVisits({ ownerIds: ids, month }), fetchPlans({ ownerIds: ids, month })])
       setRows(branch.map((b) => {

@@ -1,10 +1,9 @@
-import { FILER_ROLES } from '../../lib/roles'
 import { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { addWeeks } from 'date-fns'
-import { fetchBranch, fetchReportFcrs, useProfiles, downloadBlob } from '../../lib/data'
+import { fetchFilers, fetchReportFcrs, useProfiles, downloadBlob } from '../../lib/data'
 import { fmt, ymd, weekStart, weekEnd, toDate, monthsBetween } from '../../lib/dates'
 import { reportZip } from '../../lib/lazy'
 import { PageHeader, Spinner, Empty } from '../../components/ui'
@@ -24,7 +23,7 @@ export function WeeklyReport() {
     if (!Object.keys(byId).length) return
     setData(null)
     ;(async () => {
-      const branch = (await fetchBranch()).filter((b) => FILER_ROLES.includes(b.role))
+      const branch = await fetchFilers()
       const fcrs = await fetchReportFcrs({ from: start, to: end, ownerIds: branch.map((b) => b.id), approvedOnly: true, byId })
       setData({ branch, fcrs })
     })().catch((e) => { toast.error(e.message); setData({ branch: [], fcrs: [] }) })

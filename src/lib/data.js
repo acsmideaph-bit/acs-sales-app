@@ -18,6 +18,13 @@ export async function fetchBranch() {
   return data || []
 }
 
+// Team members who file: KAMs plus non-KAM dealer holders (TTA plan).
+export async function fetchFilers() {
+  const [branch, { data: holders }] = await Promise.all([fetchBranch(), supabase.rpc('dealer_holder_ids')])
+  const h = new Set(holders || [])
+  return branch.filter((b) => b.role === 'kam' || h.has(b.id))
+}
+
 export function useProfiles() {
   const [profiles, setProfiles] = useState([])
   useEffect(() => { fetchProfiles().then(setProfiles).catch(() => setProfiles([])) }, [])

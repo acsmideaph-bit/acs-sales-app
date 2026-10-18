@@ -163,7 +163,7 @@ function PlanUpload({ roster, stamp, onApplied, onAliasesChanged }) {
     ...(server?.errors || []).filter((e) => e.type !== 'unknown_kam').map(errText),
   ]
   const notes = (parsed?.warnings || []).filter((w) => !w.blocking).map((w) => w.text)
-  const ownerNotKam = (server?.warnings?.owner_not_kam || []).map((w) => `${w.kam_label} (${w.role.toUpperCase()}) holds ${w.dealers} dealer${w.dealers === 1 ? '' : 's'}. Only KAMs file FCRs, so these dealers get no FCRs until reassigned in the plan.`)
+  const ownerNotKam = (server?.warnings?.owner_not_kam || []).map((w) => `${w.kam_label} (${w.role.toUpperCase()}) holds ${w.dealers} dealer${w.dealers === 1 ? '' : 's'}. Not a KAM: files FCRs for these dealers as an exception, approved by his direct superior, until the plan moves them to a KAM.`)
   const unassigned = (server?.warnings?.unassigned || []).map((w) => `${w.kam_label}: ${w.dealers} dealer${w.dealers === 1 ? '' : 's'} with no KAM in the app (${w.status === 'vacant' ? 'vacant' : 'not in the app'}). They count in team totals and appear in nobody's dropdown.`)
   const canApply = parsed && server && !busy && !blocking.length && !unknown.length
 

@@ -1,10 +1,9 @@
-import { FILER_ROLES } from '../../lib/roles'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { FileSpreadsheet } from 'lucide-react'
 import { addDays, addWeeks, format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
-import { fetchBranch, useProfiles } from '../../lib/data'
+import { fetchFilers, useProfiles } from '../../lib/data'
 import { fmt, ymd, weekStart, weekEnd, toDate } from '../../lib/dates'
 import { saveCensusWorkbook } from '../../lib/lazy'
 import { PageHeader, Spinner, Field } from '../../components/ui'
@@ -28,7 +27,7 @@ export function Census() {
     if (!Object.keys(byId).length) return
     setData(null)
     ;(async () => {
-      const branch = (await fetchBranch()).filter((m) => FILER_ROLES.includes(m.role))
+      const branch = await fetchFilers()
       const ids = branch.map((m) => m.id)
       const { data: fcrs, error } = await supabase.from('fcrs').select('owner_id, visit_date')
         .in('owner_id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000'])

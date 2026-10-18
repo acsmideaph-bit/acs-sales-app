@@ -1,11 +1,10 @@
-import { FILER_ROLES } from '../lib/roles'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Plus, ArrowRight } from 'lucide-react'
 import { format, addMonths } from 'date-fns'
 import { supabase } from '../lib/supabase'
-import { fetchBranch, useProfiles } from '../lib/data'
+import { fetchFilers, useProfiles } from '../lib/data'
 import { useAuth } from '../context/AuthContext'
 import { usePendingCounts } from '../components/Layout'
 import { fmt, ymd, weekStart, weekEnd, monthRange } from '../lib/dates'
@@ -17,7 +16,7 @@ const bucket = (f) => f.status === 'approved' ? 'approved' : f.status === 'pendi
 export function Dashboard() {
   const { user, profile, canFile: canFileAny, hasTeam, isApprover } = useAuth()
   // Personal field stats are for KAMs; RSMs and above can still file FCRs from the menu.
-  const canFile = canFileAny && profile?.role === 'kam'
+  const canFile = canFileAny
   const { byId } = useProfiles()
   const navigate = useNavigate()
   const pending = usePendingCounts(isApprover)
@@ -46,7 +45,7 @@ export function Dashboard() {
   useEffect(() => {
     if (!hasTeam) return
     ;(async () => {
-      const branch = (await fetchBranch()).filter((b) => FILER_ROLES.includes(b.role))
+      const branch = await fetchFilers()
       const ids = branch.map((b) => b.id)
       if (!ids.length) return setTeam([])
       const [{ data: fcrs }, { data: plans }, { data: actual }] = await Promise.all([

@@ -10,18 +10,24 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [hasReports, setHasReports] = useState(false)
   const [hasKamReports, setHasKamReports] = useState(false)
+  const [holdsDealers, setHoldsDealers] = useState(false)
   const [loading, setLoading] = useState(true)
   const [recovery, setRecovery] = useState(false)
 
   const loadProfile = useCallback(async (userId) => {
-    if (!userId) { setProfile(null); setHasReports(false); setHasKamReports(false); return }
-    const [{ data: p }, { data: reports }] = await Promise.all([
+    if (!userId) { setProfile(null); setHasReports(false); setHasKamReports(false); setHoldsDealers(false); return }
+    const [{ data: p }, { data: reports }, { data: holders }] = await Promise.all([
       supabase.from('user_profiles').select('*').eq('id', userId).maybeSingle(),
       supabase.from('user_profiles').select('id, role').eq('supervisor_id', userId).eq('active', true),
+      supabase.rpc('dealer_holder_ids'),
     ])
+    // Non-KAMs the TTA plan assigns dealers to also file (e.g. an RSM covering
+    // accounts until he assigns them); their superior then approves.
+    const holderSet = new Set(holders || [])
     setProfile(p || null)
     setHasReports((reports || []).length > 0)
-    setHasKamReports((reports || []).some((r) => r.role === 'kam'))
+    setHasKamReports((reports || []).some((r) => r.role === 'kam' || holderSet.has(r.id)))
+    setHoldsDealers(holderSet.has(userId))
   }, [])
 
   useEffect(() => {
@@ -44,13 +50,13 @@ export function AuthProvider({ children }) {
     user: session?.user || null,
     profile,
     loading,
-    // An "approver" has KAMs reporting directly to them (the RSMs). The
-    // Channel Head and Director have reports but nothing to approve, since
-    // only KAMs file.
+    // An "approver" has filers reporting directly to them: KAMs (so the
+    // RSMs), or a dealer holder who is not a KAM (so his superior).
     isApprover: hasKamReports && canWrite(profile),
     hasTeam: hasReports || isGlobalReader(profile),
     canWrite: canWrite(profile),
-    canFile: canFile(profile),
+    canFile: canFile(profile, holdsDealers),
+    holdsDealers,
     isAdmin: profile?.role === 'admin' && profile?.active,
     recovery,
     endRecovery: () => setRecovery(false),

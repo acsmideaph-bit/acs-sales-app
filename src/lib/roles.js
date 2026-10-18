@@ -27,15 +27,18 @@ export const ACK_LABELS = {
 export const canWrite = (profile) =>
   Boolean(profile && profile.active && !profile.read_only && profile.role !== 'viewer')
 
-// Only KAMs file FCRs and MCP Plans (confirmed by Ronald, Oct 14, 2026: RSMs
+// KAMs file FCRs and MCP Plans (confirmed by Ronald, Oct 14, 2026: RSMs
 // do not submit to the Channel Head, and the Channel Head does not submit to
 // the Director). The database enforces the same rule (fcrs_insert,
 // itin_insert policies).
-export const canFile = (profile) => canWrite(profile) && profile.role === 'kam'
+// Exception (Ronald, Oct 18, 2026): a non-KAM the TTA plan assigns dealers to
+// (an RSM covering accounts until he assigns them to his team) also files,
+// for those dealers only. Same rule in the database (is_filer()).
+export const canFile = (profile, holdsDealers = false) => canWrite(profile) && (profile.role === 'kam' || holdsDealers)
 
 export const isGlobalReader = (profile) => ['admin', 'viewer'].includes(profile?.role)
 
 // Who appears in team reports (dashboard overview, MCP Actual roster, weekly
-// report, census, export). RSMs are approvers, not filers; add 'rsm' here if
-// ACS wants RSMs' own visits counted too.
+// report, census, export): KAMs, plus anyone holding dealers in the TTA plan
+// this year (see isFiler / fetchFilers in lib/data.js).
 export const FILER_ROLES = ['kam']

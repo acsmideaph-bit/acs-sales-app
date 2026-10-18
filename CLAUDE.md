@@ -17,7 +17,10 @@ to the wrong project before.
   DIRECT superior approves (`review_fcr`, `review_itinerary`). Everyone above
   sees the whole branch (`is_above`, `my_branch`). **Only KAMs file**
   FCRs and MCP Plans (`fcrs_insert`/`itin_insert` policies, `canFile`), so
-  in practice only RSMs approve.
+  in practice only RSMs approve. **Exception:** a non-KAM who holds dealers
+  in the TTA plan this year (Marc Co, Oct 18, 2026) files for those dealers
+  only (`is_filer()`, `holds_dealers()`); his direct superior approves.
+  Team reports use `fetchFilers()` (KAMs + dealer holders), not FILER_ROLES alone.
 - **Workflow fields move only through RPCs.** Status, acknowledgement and
   review columns are protected by the `guard_fcr` / `guard_itinerary`
   triggers. Client UPDATEs can only change content. Add new transitions as

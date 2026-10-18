@@ -1,9 +1,8 @@
-import { FILER_ROLES } from '../../lib/roles'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { FileSpreadsheet, FileText, Archive } from 'lucide-react'
 import { startOfMonth } from 'date-fns'
-import { fetchBranch, fetchReportFcrs, fetchArchives, useProfiles, downloadBlob } from '../../lib/data'
+import { fetchFilers, fetchReportFcrs, fetchArchives, useProfiles, downloadBlob } from '../../lib/data'
 import { ymd, fmt, monthsBetween } from '../../lib/dates'
 import { saveExportWorkbook, combinedFcrPdf, reportZip } from '../../lib/lazy'
 import { PageHeader, Field } from '../../components/ui'
@@ -19,7 +18,7 @@ export function ExportCenter() {
   const [approvedOnly, setApprovedOnly] = useState(false)
   const [busy, setBusy] = useState('')
 
-  useEffect(() => { fetchBranch().then((b) => setBranch(b.filter((m) => FILER_ROLES.includes(m.role)).sort((x, y) => x.full_name.localeCompare(y.full_name)))) }, [])
+  useEffect(() => { fetchFilers().then((b) => setBranch(b.sort((x, y) => x.full_name.localeCompare(y.full_name)))) }, [])
 
   const ownerIds = kam ? [kam] : branch.map((b) => b.id)
   const scopeLabel = kam ? byId[kam]?.full_name : 'All KAMs in your branch'
