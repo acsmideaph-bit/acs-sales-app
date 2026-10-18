@@ -57,6 +57,18 @@ This creates a login for everyone on the roster with a temporary password and wr
 
 Later changes: Admin → **Users and org chart** → edit the roster → Save and sync. New people still need a login (re-run the script; it only creates missing ones).
 
+### Account security (security review, Oct 18, 2026)
+
+- **Password policy (server side):** Supabase → Authentication → Sign In / Providers → Email → minimum password length **10**, required characters **letters and digits**. The app checks the same rule.
+- **Two-step login for admins:** admins must enter a 6-digit code from an authenticator app after the password. The app asks them to set it up at their next sign-in (QR code); the database grants admin rights only to sessions that passed it (`is_admin()` needs `aal2`). Supabase TOTP is on by default and free; nothing to switch on.
+- **Admin lost their phone:** the project owner resets it in the Supabase SQL editor, then the admin sets it up again at the next sign-in:
+  ```sql
+  delete from auth.mfa_factors where user_id = (select id from auth.users where email = 'name@cmip.com.ph');
+  ```
+- **Owner accounts:** turn on two-step verification for `acs.mideaph@gmail.com` (Google), the Supabase account and the GitHub account. Whoever controls these can bypass every rule in the app.
+- **Public role:** the anon key can call only the acknowledgement page functions (`get_fcr_ack_details`, `acknowledge_fcr`) and `ping`, `normalize_ph_mobile`. New tables and functions start closed to it (signed-in users still get them by default; RLS decides what they see).
+- **Acknowledgement links** stop showing the minutes and photo 30 days after the customer confirms.
+
 ## 5. GitHub + hosting
 
 1. Create a GitHub account with `acs.mideaph@gmail.com` and a repository named `acs-sales-app`.

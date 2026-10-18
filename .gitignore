@@ -29,5 +29,6 @@ References/
 Presentation and Quotation/
 supabase/seed/kam_aliases.sql
 supabase/tests/03_targets_rls_smoke.sql
+supabase/tests/04_security_smoke.sql
 *.plan.json
 *.dsr.json

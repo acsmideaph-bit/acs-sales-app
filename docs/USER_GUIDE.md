@@ -57,6 +57,7 @@ Same reports for your whole branch, grouped by RSM. You receive the Friday and m
 
 ## Admins
 
+- **Two-step login:** after your password, enter the 6-digit code from your authenticator app (set up once with a QR code at your first sign-in). Admin pages and data open only after the code. Lost your phone? Ask the app owner to reset it.
 - Admins see every record and every report across all of ACS, and receive the Friday and monthly digest for the whole team (subject "All ACS"). Approvals stay with each KAM's RSM.
 - *Users and org chart*: edit the roster (role, team, **Reports to**, digest email) → **Save and sync**. Click a user's access chip to make them read-only. New people also need a login (see docs/SETUP.md step 4).
 - *Targets and sales*: **TTA plan** – upload the ACS Master Monitoring (TTA plan) file, CSV or Excel. The page checks it first (dealers, totals, KAMs per month, names not yet mapped to a person) and loads only when nothing blocks it. Dealers are created or updated by **BP code**. The first load covers the whole year; later loads replace the current month to December, and restating past months needs a reason. **Monthly DSR** – upload the final DSR of a month, or the SAP **gross-sales flat file** (e.g. *FINAL P9 2026 Gross Sales Flat File – RAC Only*): every month in it is loaded at once. The app sums **Actual Sales** (or **GROSS SALES**, actual scenario only) per **BP Code** for **RAC, LC and Window AC lines only** (in the flat file: Product Line HW, LC and WRAC). Spare parts and portable units are left out unless you choose to count them. It shows every product group in the file with its amount; MBT is always left out, and an unfamiliar group name can be counted as RAC, LC or Window AC only if you say so. A DSR without a product-group column will not load. Loading a month again replaces it. **Plan names** maps the names in the plan (e.g. "HADJIE TECSON") to people; **History** lists every upload.
@@ -65,5 +66,6 @@ Same reports for your whole branch, grouped by RSM. You receive the Friday and m
 
 ## Everyone
 
-- *Account* (bottom left): change your password; set a different address for report emails.
+- *Account* (bottom left): change your password (at least 10 characters, letters and a number); set a different address for report emails.
+- Links you send customers for acknowledgement show the minutes until 30 days after they confirm; after that the page only says the meeting was confirmed.
 - Accounts are shared across the team. Dealers come only from the TTA plan (BP code, KAM per month); their name and BP code can't be edited in the app. KAMs add sub-dealers, under a dealer they hold that month. A sub-dealer follows its dealer when the dealer moves to another KAM. Search **All** before adding one, to avoid duplicates.

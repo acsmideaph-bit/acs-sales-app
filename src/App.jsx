@@ -18,6 +18,7 @@ import { FCRList } from './pages/fcr/FCRList'
 import { FCRForm } from './pages/fcr/FCRForm'
 import { FCRApprovals } from './pages/fcr/FCRApprovals'
 import { Acknowledge } from './pages/Acknowledge'
+import { TwoStep } from './pages/TwoStep'
 import { WeeklyReport } from './pages/reports/WeeklyReport'
 import { Census } from './pages/reports/Census'
 import { ExportCenter } from './pages/reports/ExportCenter'
@@ -26,7 +27,7 @@ import { Users } from './pages/admin/Users'
 import { Targets } from './pages/admin/Targets'
 
 function Guard({ children, when = true }) {
-  const { user, profile, loading } = useAuth()
+  const { user, profile, loading, needsTwoStep } = useAuth()
   const loc = useLocation()
   if (loading) return <Spinner />
   // Remember where they were going (e.g. the FCR photo step opened by QR).
@@ -41,6 +42,8 @@ function Guard({ children, when = true }) {
       </div>
     )
   }
+  // Admins enter the authenticator code before anything else loads.
+  if (needsTwoStep) return <TwoStep />
   if (!when) return <Navigate to="/dashboard" replace />
   return children
 }

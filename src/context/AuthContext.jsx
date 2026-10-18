@@ -13,6 +13,15 @@ export function AuthProvider({ children }) {
   const [holdsDealers, setHoldsDealers] = useState(false)
   const [loading, setLoading] = useState(true)
   const [recovery, setRecovery] = useState(false)
+  // Two-step login: aal1 = password only, aal2 = password + authenticator code.
+  // nextLevel is aal2 once an authenticator app is set up.
+  const [aal, setAal] = useState({ currentLevel: null, nextLevel: null })
+
+  // Reads the level from the session token itself (no network call).
+  const loadAal = useCallback(async () => {
+    const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    setAal({ currentLevel: data?.currentLevel || null, nextLevel: data?.nextLevel || null })
+  }, [])
 
   const loadProfile = useCallback(async (userId) => {
     if (!userId) { setProfile(null); setHasReports(false); setHasKamReports(false); setHoldsDealers(false); return }
@@ -33,17 +42,23 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session)
-      await loadProfile(data.session?.user?.id)
+      await Promise.all([loadProfile(data.session?.user?.id), loadAal()])
       setLoading(false)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === 'PASSWORD_RECOVERY') setRecovery(true)
       setSession(s)
       // Defer: calling supabase inside this callback can deadlock auth.
-      setTimeout(() => loadProfile(s?.user?.id), 0)
+      setTimeout(() => { loadProfile(s?.user?.id); loadAal() }, 0)
     })
     return () => sub.subscription.unsubscribe()
-  }, [loadProfile])
+  }, [loadProfile, loadAal])
+
+  // Admin rights count only after the authenticator code (the database
+  // enforces the same rule: is_admin() needs aal2). Until then an admin sees
+  // only the two-step screen.
+  const adminRole = profile?.role === 'admin' && profile?.active
+  const twoStepDone = aal.currentLevel === 'aal2'
 
   const value = {
     session,
@@ -57,7 +72,10 @@ export function AuthProvider({ children }) {
     canWrite: canWrite(profile),
     canFile: canFile(profile, holdsDealers),
     holdsDealers,
-    isAdmin: profile?.role === 'admin' && profile?.active,
+    isAdmin: adminRole && twoStepDone,
+    needsTwoStep: Boolean(adminRole && !twoStepDone),
+    twoStepOn: aal.nextLevel === 'aal2',
+    refreshAal: loadAal,
     recovery,
     endRecovery: () => setRecovery(false),
     refreshProfile: () => loadProfile(session?.user?.id),

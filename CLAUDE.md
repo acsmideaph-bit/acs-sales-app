@@ -25,6 +25,14 @@ to the wrong project before.
   their accounts (dealers held this or last month, their sub-dealers, accounts
   on their own FCRs); an RSM only their KAMs' accounts; Channel Head,
   Director and admins all (`accounts_read` + `can_view_account`, `can_view_bp`).
+- **Admin rights need the two-step login** (Oct 18, 2026): `is_admin()`,
+  `is_global_reader()` and `is_writer()` treat an admin as powerless unless the
+  session is `aal2` (`jwt_aal()`); the app shows `TwoStep` first. The anon role
+  has no table grants and may call only the four acknowledgement/utility
+  functions; new objects start closed to anon (default privileges) while
+  `authenticated` still gets them by default; keep revoking anon/public on
+  anything sensitive anyway. Ack links expire 30 days after
+  confirmation (`ack_link_live`). Tests: `supabase/tests/04_security_smoke.sql`.
 - **Workflow fields move only through RPCs.** Status, acknowledgement and
   review columns are protected by the `guard_fcr` / `guard_itinerary`
   triggers. Client UPDATEs can only change content. Add new transitions as

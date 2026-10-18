@@ -4,7 +4,7 @@ import { CheckCircle2, AlertCircle, Camera, MapPin } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { templateFor, normalizeFormData } from '../lib/fcrTemplates'
 import { buildMinutes } from '../lib/fcrMinutes'
-import { fmtDateTime } from '../lib/dates'
+import { fmt, fmtDateTime } from '../lib/dates'
 import { MinutesView } from '../components/MinutesView'
 import { Spinner } from '../components/ui'
 import logo from '../lib/cmip-logo.jpg'
@@ -13,7 +13,7 @@ import logo from '../lib/cmip-logo.jpg'
 // that match the exact token, so nothing else can be browsed from here.
 export function Acknowledge() {
   const { token } = useParams()
-  const [state, setState] = useState('loading') // loading | notfound | ready | done
+  const [state, setState] = useState('loading') // loading | notfound | expired | ready | done
   const [d, setD] = useState(null)
   const [name, setName] = useState('')
   const [editName, setEditName] = useState(false)
@@ -26,7 +26,10 @@ export function Acknowledge() {
     supabase.rpc('get_fcr_ack_details', { p_token: token }).then(({ data, error: e }) => {
       if (e || !data?.length) { setState('notfound'); return }
       const row = data[0]
-      setD(row); setName(row.attendee_name || ''); setEditName(!row.attendee_name)
+      setD(row)
+      // 30 days after confirmation the link stops showing the minutes.
+      if (row.ack_status === 'expired') { setState('expired'); return }
+      setName(row.attendee_name || ''); setEditName(!row.attendee_name)
       setState(row.ack_status === 'acknowledged' ? 'done' : 'ready')
     })
     // The meeting photo comes from the ack-photo function (short-lived signed
@@ -66,6 +69,18 @@ export function Acknowledge() {
       <AlertCircle size={32} className="mx-auto text-ink-4 mb-3" />
       <h1 className="text-[17px]">This link is not valid</h1>
       <p className="text-[13px] text-ink-3 mt-2">It may have been replaced by a newer link after the report was updated. Please ask your Concepcion Midea representative to send it again.</p>
+    </div>,
+  )
+
+  if (state === 'expired') return shell(
+    <div className="panel p-8 text-center">
+      <CheckCircle2 size={32} className="mx-auto text-ok mb-3" />
+      <h1 className="text-[17px]">These minutes were confirmed</h1>
+      <p className="text-[13px] text-ink-3 mt-2">
+        The meeting{d.visit_date ? ` on ${fmt(d.visit_date)}` : ''} was confirmed on {fmtDateTime(d.acknowledged_at)}.
+        For security, this link stops showing the minutes 30 days after confirmation.
+        If you need a copy, please ask {d.submitter_name || 'your Concepcion Midea representative'}.
+      </p>
     </div>,
   )
 
