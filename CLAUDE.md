@@ -21,6 +21,10 @@ to the wrong project before.
   in the TTA plan this year (Marc Co, Oct 18, 2026) files for those dealers
   only (`is_filer()`, `holds_dealers()`); his direct superior approves.
   Team reports use `fetchFilers()` (KAMs + dealer holders), not FILER_ROLES alone.
+- **Account visibility follows ownership** (Oct 18, 2026): a KAM sees only
+  their accounts (dealers held this or last month, their sub-dealers, accounts
+  on their own FCRs); an RSM only their KAMs' accounts; Channel Head,
+  Director and admins all (`accounts_read` + `can_view_account`, `can_view_bp`).
 - **Workflow fields move only through RPCs.** Status, acknowledgement and
   review columns are protected by the `guard_fcr` / `guard_itinerary`
   triggers. Client UPDATEs can only change content. Add new transitions as

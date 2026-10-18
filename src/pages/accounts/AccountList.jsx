@@ -8,7 +8,7 @@ import { fmt } from '../../lib/dates'
 import { PageHeader, Spinner, Empty, Segmented } from '../../components/ui'
 
 export function AccountList() {
-  const { canWrite, canFile, user } = useAuth()
+  const { canWrite, canFile, hasTeam, user } = useAuth()
   const { byId } = useProfiles()
   const navigate = useNavigate()
   const [accounts, setAccounts] = useState(null)
@@ -38,7 +38,7 @@ export function AccountList() {
 
   return (
     <>
-      <PageHeader title="Accounts" subtitle="Dealers come from the TTA plan (by BP code, KAM per month). Sub-dealers are added by the KAMs who cover them."
+      <PageHeader title="Accounts" subtitle={hasTeam ? 'Accounts of the KAMs in your team. Dealers come from the TTA plan (BP code, KAM per month); sub-dealers are added by the KAMs.' : 'Your accounts: the dealers the TTA plan assigns to you and the sub-dealers you cover.'}
         actions={canWrite && <Link to="/accounts/new" className="btn-primary"><Plus size={15} /> New sub-dealer</Link>} />
       <div className="panel">
         <div className="flex flex-wrap items-center gap-2 p-3 border-b border-line">
@@ -46,13 +46,13 @@ export function AccountList() {
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-4" />
             <input className="input pl-8" placeholder="Search name, BP code, owner, region, KAM" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <Segmented value={scope} onChange={setScope} options={[{ value: 'mine', label: 'My accounts' }, { value: 'all', label: 'All' }]} />
+          {canFile && hasTeam && <Segmented value={scope} onChange={setScope} options={[{ value: 'mine', label: 'My accounts' }, { value: 'all', label: 'Team' }]} />}
           <Segmented value={type} onChange={setType} options={[{ value: 'all', label: 'All types' }, { value: 'dealer', label: 'Dealers' }, { value: 'sub_dealer', label: 'Sub-dealers' }]} />
           <span className="ml-auto text-[12px] text-ink-3 tabular-nums">{rows.length} account{rows.length === 1 ? '' : 's'}</span>
         </div>
         {!accounts ? <Spinner /> : rows.length === 0 ? (
           <Empty title={scope === 'mine' ? 'No accounts assigned to you yet' : 'No accounts match'}>
-            {scope === 'mine' ? 'Switch to "All" to find an existing account, or profile a new one.' : 'Try a different search.'}
+            {scope === 'mine' ? 'Your dealers come from the TTA plan for this month. If one is missing, ask the ACS admin.' : 'Try a different search.'}
           </Empty>
         ) : (
           <div className="overflow-x-auto">

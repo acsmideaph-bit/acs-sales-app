@@ -72,7 +72,7 @@ export function AccountForm() {
       : await supabase.from('accounts').insert(payload).select().single()
     setSaving(false)
     if (res.error) {
-      toast.error(res.error.code === '23505' ? 'An account with this name and type already exists. Search for it under Accounts > All.'
+      toast.error(res.error.code === '23505' ? 'An account with this name already exists (it may belong to another KAM). Ask your RSM or the ACS admin.'
         : res.error.code === '42501' ? 'You can add sub-dealers only under a dealer assigned to you this month.' : res.error.message)
       return
     }
