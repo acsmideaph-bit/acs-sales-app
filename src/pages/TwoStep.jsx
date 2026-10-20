@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { ShieldCheck, Copy, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Spinner } from '../components/ui'
@@ -9,12 +9,21 @@ import { Spinner } from '../components/ui'
 // password they enter a 6-digit code from an authenticator app (Google
 // Authenticator, Microsoft Authenticator, 1Password...). Supabase TOTP, free.
 // The database enforces it too: admin rights need an aal2 session.
+
+// On a phone the QR is on the same screen the authenticator app needs to scan,
+// so phones get a one-tap otpauth:// link (opens Google/Microsoft Authenticator
+// or the iPhone Passwords app) and a copyable key; the QR stays for laptops.
+const IS_PHONE = typeof window !== 'undefined' &&
+  (window.matchMedia?.('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent))
+
 export function TwoStep() {
   const { user, signOut, refreshAal } = useAuth()
   const [mode, setMode] = useState('loading') // loading | enroll | verify | error
   const [factorId, setFactorId] = useState(null)
   const [qr, setQr] = useState(null)
   const [secret, setSecret] = useState('')
+  const [uri, setUri] = useState('')
+  const [copied, setCopied] = useState(false)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -39,7 +48,7 @@ export function TwoStep() {
       // supabase-js hands back "data:image/svg+xml;utf-8,<svg…>" unencoded; a
       // "#" in the SVG (colour values) would cut the image short. Encode it.
       const svg = String(en.totp.qr_code || '').replace(/^data:image\/svg\+xml;[^,]*,/, '')
-      setFactorId(en.id); setQr(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`); setSecret(en.totp.secret); setMode('enroll')
+      setFactorId(en.id); setQr(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`); setSecret(en.totp.secret); setUri(en.totp.uri || ''); setMode('enroll')
     })()
   }, [])
 
@@ -58,6 +67,18 @@ export function TwoStep() {
     }
     await refreshAal()
   }
+
+  const copyKey = async () => {
+    try { await navigator.clipboard.writeText(secret); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* key stays selectable */ }
+  }
+  const keyBox = (
+    <div className="flex items-stretch gap-2">
+      <p className="flex-1 font-mono text-[13px] text-ink break-all select-all bg-canvas border border-line rounded px-2 py-1.5">{secret.match(/.{1,4}/g)?.join(' ')}</p>
+      <button type="button" onClick={copyKey} className="btn-secondary px-3 text-[12px] flex items-center gap-1" aria-label="Copy setup key">
+        {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
+  )
 
   if (mode === 'loading') return <Spinner label="Checking two-step login" />
 
@@ -99,18 +120,36 @@ export function TwoStep() {
         {mode === 'enroll' && (
           <>
             <p className="text-[13px] text-ink-2">Admin accounts see every account, target and sales figure, so they need a second step after the password. Set it up once:</p>
-            <ol className="text-[13px] text-ink-2 mt-3 space-y-1.5 list-decimal pl-5">
-              <li>Install an authenticator app on your phone (Google Authenticator, Microsoft Authenticator or similar).</li>
-              <li>In the app, add an account and scan this code.</li>
-              <li>Enter the 6-digit code the app shows.</li>
-            </ol>
-            <div className="my-4 flex justify-center">
-              <img src={qr} alt="QR code for your authenticator app" width={176} height={176} className="border border-line rounded bg-white p-2" />
-            </div>
-            <details className="mb-4 text-[12px] text-ink-3">
-              <summary className="cursor-pointer select-none">Can't scan? Enter this key instead</summary>
-              <p className="mt-2 font-mono text-[13px] text-ink break-all select-all bg-canvas border border-line rounded px-2 py-1.5">{secret}</p>
-            </details>
+            {IS_PHONE ? (
+              <>
+                <ol className="text-[13px] text-ink-2 mt-3 space-y-1.5 list-decimal pl-5">
+                  <li>Install an authenticator app (Google Authenticator, Microsoft Authenticator or similar).</li>
+                  <li>Tap the button below. Your authenticator opens and adds <strong>ACS Sales Ops</strong>.</li>
+                  <li>Come back here and enter the 6-digit code it shows.</li>
+                </ol>
+                {uri && <a href={uri} className="btn-primary w-full h-10 mt-4 flex items-center justify-center">Add to authenticator app</a>}
+                <details className="my-4 text-[12px] text-ink-3">
+                  <summary className="cursor-pointer select-none">Button didn't open the app? Enter the key by hand</summary>
+                  <p className="mt-2 mb-2">In the app choose <em>Add account → Enter a setup key</em>. Account: {user?.email}. Type: time-based.</p>
+                  {keyBox}
+                </details>
+              </>
+            ) : (
+              <>
+                <ol className="text-[13px] text-ink-2 mt-3 space-y-1.5 list-decimal pl-5">
+                  <li>Install an authenticator app on your phone (Google Authenticator, Microsoft Authenticator or similar).</li>
+                  <li>In the app, add an account and scan this code.</li>
+                  <li>Enter the 6-digit code the app shows.</li>
+                </ol>
+                <div className="my-4 flex justify-center">
+                  <img src={qr} alt="QR code for your authenticator app" width={176} height={176} className="border border-line rounded bg-white p-2" />
+                </div>
+                <details className="mb-4 text-[12px] text-ink-3">
+                  <summary className="cursor-pointer select-none">Can't scan? Enter this key instead</summary>
+                  <div className="mt-2">{keyBox}</div>
+                </details>
+              </>
+            )}
             {codeForm}
           </>
         )}
