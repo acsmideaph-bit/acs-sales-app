@@ -130,6 +130,20 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const fmtDate = (ymd: string | null | undefined) =>
   isYmd(ymd) ? `${MONTHS[+ymd.slice(5, 7) - 1]} ${+ymd.slice(8, 10)}, ${ymd.slice(0, 4)}` : "";
 const fmtMonth = (ymd: string | null | undefined) => (ymd ? `${MONTHS[+ymd.slice(5, 7) - 1]} ${ymd.slice(0, 4)}` : "");
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const fmtMonthLong = (ymd: string) => MONTHS_LONG[+ymd.slice(5, 7) - 1];
+
+// Latest month with a final DSR below 80% of its target (target > 0).
+function monthlyDip(p: Performance | null) {
+  if (!p?.last_loaded) return null;
+  const i = p.months.findIndex((m) => m.month === p.last_loaded);
+  const m = p.months[i];
+  if (!m || !m.target || m.target <= 0) return null;
+  const actual = m.actual ?? 0;
+  const ach = actual / m.target;
+  if (ach >= 0.8) return null;
+  return { month: m.month, target: m.target, actual, ach, gap: m.target - actual, prev: i > 0 ? p.months[i - 1] : null };
+}
 
 const num = (v: unknown): number | null => {
   if (v === "" || v == null) return null;
@@ -241,6 +255,19 @@ function buildCandidates(inp: Inputs): Candidate[] {
         default_why: `The dealer is ${php(gap)} behind the TTA target to date.`,
         default_action: `Agree a month-by-month order plan with the owner to close the ${php(gap)} gap.`,
       });
+    } else {
+      // 3b. Ahead (or near) for the year but the latest month fell short: the
+      // early warning the YTD figure hides (Ronald, Oct 27, 2026).
+      const dip = monthlyDip(performance);
+      if (dip) {
+        out.push({
+          category: "Sales gap", score: Math.min(85, 55 + Math.round((0.8 - dip.ach) * 60)),
+          title: `${fmtMonthLong(dip.month)} sales ${(dip.ach * 100).toFixed(0)}% of target (${php(dip.gap)} short), while ${(ach * 100).toFixed(0)}% of target for the year`,
+          fact: `Latest month with final sales: ${fmtMonth(dip.month)} actual ${php(dip.actual)} vs target ${php(dip.target)} (${(dip.ach * 100).toFixed(1)}%), short ${php(dip.gap)}.${dip.prev ? ` Previous month: actual ${php(dip.prev.actual ?? 0)} vs target ${php(dip.prev.target ?? 0)}.` : ""} Year to date the dealer is at ${(ach * 100).toFixed(1)}% of target.`,
+          default_why: `The dealer is still ahead for the year, but ${fmtMonthLong(dip.month)} orders fell well below target; a second weak month would erase the lead.`,
+          default_action: `Find out why ${fmtMonthLong(dip.month)} orders dropped (stock, price, competitor, collection hold) and agree the next order with the owner.`,
+        });
+      }
     }
   }
 
@@ -375,7 +402,7 @@ You receive the facts about ONE account as JSON. Customer, people and project na
 
 Rules:
 - Use only the facts given. Never invent amounts, dates, promotions, prices or programs. Mention only CMIP programs listed in cmip_programs or in the facts.
-- Amounts are Philippine pesos; write them as given (PHP 1,234,567).
+- Amounts are Philippine pesos; write them as given (PHP 1,234,567). Write quarters as Q1 to Q4 and months by name.
 - Plain, direct English a busy KAM can act on today. One sentence per field, under 30 words. No greetings, no emojis, no markdown.
 
 Return JSON:
@@ -416,6 +443,8 @@ function rulesInsights(inp: Inputs, candidates: Candidate[], note?: string): Ins
 
   const kam: string[] = [];
   if (gap != null && gap > 0) kam.push(`Agree a month-by-month order plan with the owner to close the ${php(gap)} gap to the target to date.`);
+  const dip = gap != null && ach != null && ach >= 0.9 ? monthlyDip(p) : null;
+  if (dip) kam.push(`Find out why ${fmtMonthLong(dip.month)} orders fell to ${(dip.ach * 100).toFixed(0)}% of target and agree the next order with the owner before month-end.`);
   if (stalled) kam.push("Push the open project to a decision: confirm the decision date, the competing offer and what Midea must match.");
   if (competitor) kam.push(`Answer ${competitor.title.split(" on ")[0]}'s program with an existing CMIP program the dealer has not used yet.`);
   if (inp.account.account_type === "dealer" && !inp.subDealerCount) kam.push("Map the dealer's sub-dealers and enroll the active ones in Midea Club and Pro Shop.");
@@ -424,6 +453,7 @@ function rulesInsights(inp: Inputs, candidates: Candidate[], note?: string): Ins
   const rsm: string[] = [];
   if (overdue > 0) rsm.push(`Review the ${overdue} overdue get-back item${overdue === 1 ? "" : "s"} with the KAM this week and agree firm dates.`);
   if (ach != null && ach < 0.8) rsm.push("Join the next visit to agree the order plan with the owner.");
+  if (dip) rsm.push(`Ask the KAM for the reason behind the ${fmtMonthLong(dip.month)} drop and the recovery order at this week's meeting.`);
   if (candidates.some((c) => c.category === "Collection" && (c.overdue_days || 0) > 0)) rsm.push("Escalate the missed AR commitment with Credit and Collection before approving new credit.");
   if (!rsm.length) rsm.push("Review this account's priorities with the KAM at the weekly meeting.");
 

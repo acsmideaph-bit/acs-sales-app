@@ -121,3 +121,28 @@ Deno.test("empty account: no FCRs, no targets", () => {
   assert(r.develop.kam.length >= 1);
   assert(r.summary.length > 0);
 });
+
+Deno.test("monthly dip: ahead for the year but the last month fell short", () => {
+  const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => ({ month: `2026-${String(m).padStart(2, "0")}-01`, target_amount: 1_000_000 }));
+  const actuals = [1, 2, 3, 4, 5, 6, 7, 8].map((m) => ({ month: `2026-${String(m).padStart(2, "0")}-01`, actual_sales: 1_300_000 }))
+    .concat([{ month: "2026-09-01", actual_sales: 600_000 }]);
+  const loaded = months.slice(0, 9).map((m) => m.month);
+  const p = performanceFrom(2026, today, months, actuals, loaded)!;
+  assert(p.ytd_actual / p.ytd_target > 1, "ahead for the year");
+  const inp: Inputs = { ...inputs, fcrs: [], getBacks: [], performance: p };
+  const c = buildCandidates(inp);
+  assertEquals(c.length, 1);
+  assertEquals(c[0].category, "Sales gap");
+  assert(c[0].title.startsWith("September sales 60% of target (PHP 400,000 short)"), c[0].title);
+  const r = rulesInsights(inp, c);
+  assert(r.develop.kam[0].includes("September"), r.develop.kam[0]);
+  assert(r.develop.rsm.some((x) => x.includes("September")));
+  // A good last month: nothing.
+  const ok = performanceFrom(2026, today, months, actuals.slice(0, 8).concat([{ month: "2026-09-01", actual_sales: 900_000 }]), loaded);
+  assertEquals(buildCandidates({ ...inp, performance: ok }).length, 0);
+});
+
+Deno.test("monthly dip is not added when the YTD gap is already on the list", () => {
+  const c = buildCandidates(inputs); // YTD 47%, March = 0 sales
+  assertEquals(c.filter((x) => x.category === "Sales gap").length, 1);
+});
