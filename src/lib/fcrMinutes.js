@@ -1,5 +1,5 @@
 import { fmt, todayYmd } from './dates'
-import { templateFor, filledRows, sectionHasContent, peso, columnTotal, matrixCell } from './fcrTemplates'
+import { templateFor, filledRows, sectionHasContent, peso, columnTotal, matrixCell, getBackItems, getBackLine } from './fcrTemplates'
 
 // Builds the Minutes of the Meeting from an FCR. ONE function, used by the
 // FCR preview, the public acknowledgement page and the PDF, so what the
@@ -117,8 +117,9 @@ export function buildMinutes({ fcr, submitterName, submitterPosition }) {
     if (lines.length) blocks.push({ title: 'Cycle Initiatives', lines })
   }
 
-  const gb = String(fd.get_back_items || '').trim()
-  blocks.push({ title: 'Agreed Get-Back Items', lines: gb ? gb.split(/\n+/).map((l) => l.trim()).filter(Boolean) : ['None recorded.'] })
+  // Same lines as before for older free-text forms; rows add "(by <date>)".
+  const gb = getBackItems(fd).map(getBackLine)
+  blocks.push({ title: 'Agreed Get-Back Items', lines: gb.length ? gb : ['None recorded.'] })
 
   const cn = String(fd.coverage_notes || '').trim()
   blocks.push({ title: 'Coverage Notes', lines: cn ? cn.split(/\n+/).map((l) => l.trim()).filter(Boolean) : ['None recorded.'] })

@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
-  ArrowLeft, Save, Send, Mail, Link2, RefreshCw, FileDown, Trash2, CheckCircle2, Clock3, Lock, Users, Lightbulb, Check, X, Eye, MessageCircle, Copy, Plus,
+  ArrowLeft, Save, Send, Mail, Link2, RefreshCw, FileDown, Trash2, CheckCircle2, Clock3, Lock, Users, Check, X, Eye, MessageCircle, Copy, Plus,
 } from 'lucide-react'
 import { supabase, rpc, invokeFunction } from '../../lib/supabase'
 import { fetchAccounts, useProfiles } from '../../lib/data'
 import { useAuth } from '../../context/AuthContext'
 import { fmt, fmtDateTime, todayYmd } from '../../lib/dates'
 import {
-  templateFor, templateForAccountType, emptyFormData, normalizeFormData, customerInfoFromAccount,
+  templateFor, templateForAccountType, emptyFormData, normalizeFormData, customerInfoFromAccount, getBackProblems,
 } from '../../lib/fcrTemplates'
 import { buildMinutes } from '../../lib/fcrMinutes'
 import { buildSuggestions } from '../../lib/fcrSuggestions'
@@ -19,6 +19,8 @@ import { downloadFcrPdf } from '../../lib/lazy'
 import { FCRFormBody, CustomerInfo } from './FCRFormBody'
 import { MinutesView } from '../../components/MinutesView'
 import { VisitPhoto } from '../../components/VisitPhoto'
+import { AccountInsights } from '../../components/AccountInsights'
+import { GetBackPanel } from '../../components/GetBackPanel'
 import { uploadCapturedPhoto, PHOTO_BUCKET } from '../../lib/photo'
 import { PageHeader, Spinner, StatusChip, AckChip, Field, Segmented, Modal, confirm, prompt } from '../../components/ui'
 import { notifyPendingChanged } from '../../components/Layout'
@@ -269,6 +271,16 @@ export function FCRForm() {
     return true
   }
 
+  // Every get-back row needs a due date before the customer confirms: the
+  // date is what the KAM and the RSM are held to after approval.
+  const needGetBackDates = () => {
+    const problems = getBackProblems(template, fcr.form_data, fcr.visit_date)
+    if (!problems.length) return false
+    toast.error(problems.join(' '))
+    document.getElementById('sec-get_back_items')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return true
+  }
+
   // Desktop QR handoff needs a saved FCR to link to.
   const ensureSavedForPhoto = async () => {
     if (!validate()) return null
@@ -300,7 +312,7 @@ export function FCRForm() {
   }
 
   const sendEmail = async () => {
-    if (needPhoto()) return
+    if (needPhoto() || needGetBackDates()) return
     if (!fcr.attendee_email?.trim()) { setErrors({ attendee_email: 'Enter the attendee email, or send by Viber' }); return }
     setBusy('email')
     try {
@@ -317,7 +329,7 @@ export function FCRForm() {
   // RSM sees where it went; then Viber opens on that number with the message
   // ready to paste (Viber's links can't pre-fill text into a specific chat).
   const sendViber = async () => {
-    if (needPhoto()) return
+    if (needPhoto() || needGetBackDates()) return
     const number = normalizePhMobile(fcr.attendee_mobile)
     const owner = (fcr.attendee_mobile_owner || fcr.attendee_name || '').trim()
     const e = {}
@@ -341,7 +353,7 @@ export function FCRForm() {
   }
 
   const copyLink = async () => {
-    if (needPhoto()) return
+    if (needPhoto() || needGetBackDates()) return
     setBusy('link')
     try {
       const fid = await ensureSaved()
@@ -570,15 +582,8 @@ export function FCRForm() {
               </div>
             </div>
 
-            {suggestions.length > 0 && editable && (
-              <div className="panel">
-                <div className="panel-head"><span className="panel-title flex items-center gap-1.5"><Lightbulb size={14} /> From past visits</span></div>
-                <ul className="p-4 space-y-2">
-                  {suggestions.map((s) => <li key={s.id} className="text-[12.5px] leading-snug"><span className="chip-info mr-1">{s.category}</span>{s.text}</li>)}
-                </ul>
-                <p className="px-4 pb-3 text-2xs text-ink-4">Rule-based from this account's approved FCRs. Not AI-generated.</p>
-              </div>
-            )}
+            {fcr.account_id && <GetBackPanel accountId={fcr.account_id} accountKamId={account?.kam_id} />}
+            {fcr.account_id && <AccountInsights accountId={fcr.account_id} fallback={suggestions} />}
           </div>
         )}
       </div>

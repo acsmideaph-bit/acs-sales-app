@@ -14,3 +14,8 @@ verify_jwt = false
 
 [functions.monthly-digest]
 verify_jwt = false
+
+# Priorities and advice per account (Gemini free tier). Called by a signed-in
+# user; the function also checks the account is visible to the caller.
+[functions.account-insights]
+verify_jwt = true

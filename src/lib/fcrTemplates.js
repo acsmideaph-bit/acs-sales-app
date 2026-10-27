@@ -44,6 +44,19 @@ const getBack = {
   placeholder: 'What did we commit to get back to the customer on? One item per line, with the date.',
 }
 
+// From dealer v3 / sub-dealer v2 (Oct 27, 2026): one row per promise with a
+// due date. On approval each row becomes a tracked item (get_back_items) that
+// the KAM or the RSM closes. Same key, so readers use getBackItems() below.
+const getBackRows = {
+  key: 'get_back_items', title: 'Customer Get Back Items', kind: 'grid',
+  rows: 3, addable: true, maxRows: 12,
+  requireDate: 'due_date',
+  columns: [
+    { key: 'item', label: 'What we will get back to the customer on', width: '75%' },
+    { key: 'due_date', label: 'Due date', type: 'date' },
+  ],
+}
+
 const projects = {
   key: 'project_opportunities', title: 'Project Opportunities - Under Negotiation', kind: 'grid',
   rows: 3, addable: true, maxRows: 15,
@@ -171,6 +184,14 @@ const ACS_DEALER_V2 = {
   sections: [performance, ...ACS_DEALER_V1.sections],
 }
 
+// v3 (Oct 27, 2026): get-back items as rows with a due date (tracked after
+// approval). Everything else is v2 unchanged.
+const ACS_DEALER_V3 = {
+  ...ACS_DEALER_V2,
+  version: 3,
+  sections: ACS_DEALER_V2.sections.map((x) => (x.key === 'get_back_items' ? getBackRows : x)),
+}
+
 const ACS_SUB_DEALER_V1 = {
   id: 'acs_sub_dealer',
   version: 1,
@@ -216,16 +237,25 @@ const ACS_SUB_DEALER_V1 = {
   ],
 }
 
+// v2 (Oct 27, 2026): get-back items as rows with a due date, as dealer v3.
+const ACS_SUB_DEALER_V2 = {
+  ...ACS_SUB_DEALER_V1,
+  version: 2,
+  sections: ACS_SUB_DEALER_V1.sections.map((x) => (x.key === 'get_back_items' ? getBackRows : x)),
+}
+
 export const TEMPLATES = {
   'acs_dealer@1': ACS_DEALER_V1,
   'acs_dealer@2': ACS_DEALER_V2,
+  'acs_dealer@3': ACS_DEALER_V3,
   'acs_sub_dealer@1': ACS_SUB_DEALER_V1,
+  'acs_sub_dealer@2': ACS_SUB_DEALER_V2,
 }
 
 // Latest version per template id -- what new FCRs are filed under.
 export const CURRENT = {
-  acs_dealer: ACS_DEALER_V2,
-  acs_sub_dealer: ACS_SUB_DEALER_V1,
+  acs_dealer: ACS_DEALER_V3,
+  acs_sub_dealer: ACS_SUB_DEALER_V2,
 }
 
 export const templateFor = (id, version) =>
@@ -351,6 +381,40 @@ export const sectionHasContent = (section, value) => {
   if (section.kind === 'matrix') return matrixHasContent(section, value)
   const fieldsFilled = (section.fields || []).some((f) => String(value?.f?.[f.key] ?? '').trim())
   return fieldsFilled || filledRows(section, value).length > 0
+}
+
+// ---------------------------------------------------------------------------
+// Get-back items, either shape: rows with due dates (current forms) or free
+// text, one item per line (older forms). Mirrors fcr_get_back_list() in SQL.
+// ---------------------------------------------------------------------------
+
+export const getBackItems = (formData) => {
+  const v = formData?.get_back_items
+  if (typeof v === 'string') {
+    return v.split(/\n+/).map((l) => l.trim()).filter(Boolean).map((item) => ({ item, due_date: '' }))
+  }
+  return (Array.isArray(v?.rows) ? v.rows : [])
+    .map((r) => ({ item: String(r?.item ?? '').trim(), due_date: /^\d{4}-\d{2}-\d{2}$/.test(r?.due_date || '') ? r.due_date : '' }))
+    .filter((r) => r.item)
+}
+
+const shortDate = (ymdStr) => {
+  const [y, m, d] = ymdStr.split('-').map(Number)
+  return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]} ${d}, ${y}`
+}
+export const getBackLine = (g) => (g.due_date ? `${g.item} (by ${shortDate(g.due_date)})` : g.item)
+export const getBackText = (formData, sep = '; ') => getBackItems(formData).map(getBackLine).join(sep)
+
+// Rows with an item but no due date, or a due date before the visit. Checked
+// before the customer is asked to confirm.
+export const getBackProblems = (template, formData, visitDate) => {
+  const s = template?.sections.find((x) => x.key === 'get_back_items')
+  if (!s?.requireDate) return []
+  const rows = (formData?.get_back_items?.rows || []).filter((r) => String(r.item || '').trim())
+  const out = []
+  if (rows.some((r) => !r.due_date)) out.push('Add a due date to every get-back item.')
+  if (visitDate && rows.some((r) => r.due_date && r.due_date < visitDate)) out.push('A get-back due date cannot be before the visit date.')
+  return out
 }
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import { supabase, rpc } from '../../lib/supabase'
 import { useProfiles } from '../../lib/data'
 import { useAuth } from '../../context/AuthContext'
 import { fmt, fmtDateTime } from '../../lib/dates'
-import { templateFor, normalizeFormData } from '../../lib/fcrTemplates'
+import { templateFor, normalizeFormData, getBackText } from '../../lib/fcrTemplates'
 import { buildMinutes } from '../../lib/fcrMinutes'
 import { MinutesView } from '../../components/MinutesView'
 import { PageHeader, Spinner, Empty, Modal, prompt } from '../../components/ui'
@@ -87,7 +87,7 @@ export function FCRApprovals() {
                     <td>{byId[f.owner_id]?.full_name}</td>
                     <td className="font-medium"><button className="hover:underline text-left" onClick={() => navigate(`/fcr/${f.id}`)}>{f.customer_info?.company_name}</button></td>
                     <td className="text-ink-2">{f.acknowledged_name}<span className="block text-2xs text-ink-4">{fmtDateTime(f.acknowledged_at)}</span>{f.ack_channel && <span className="block text-2xs text-ink-3">{ackRequestLine(f).replace(/ on .*$/, '')}</span>}</td>
-                    <td className="text-ink-2 max-w-[260px] truncate">{f.form_data?.get_back_items}</td>
+                    <td className="text-ink-2 max-w-[260px] truncate">{getBackText(f.form_data)}</td>
                     <td className="whitespace-nowrap text-right">
                       <button className="btn-ghost" onClick={() => setPreview(f)}><Eye size={14} /> Review</button>
                     </td>

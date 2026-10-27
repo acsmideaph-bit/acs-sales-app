@@ -17,6 +17,7 @@ import { McpArchive } from './pages/mcp/McpArchive'
 import { FCRList } from './pages/fcr/FCRList'
 import { FCRForm } from './pages/fcr/FCRForm'
 import { FCRApprovals } from './pages/fcr/FCRApprovals'
+import { GetBackList } from './pages/fcr/GetBackList'
 import { Acknowledge } from './pages/Acknowledge'
 import { TwoStep } from './pages/TwoStep'
 import { WeeklyReport } from './pages/reports/WeeklyReport'
@@ -97,6 +98,7 @@ export default function App() {
           <Route path="/fcr/new" element={<FCRForm />} />
           <Route path="/fcr/approvals" element={<Guard when={isApprover}><FCRApprovals /></Guard>} />
           <Route path="/fcr/:id" element={<FCRForm />} />
+          <Route path="/get-back" element={<GetBackList />} />
 
           <Route path="/reports/weekly" element={<Guard when={hasTeam}><WeeklyReport /></Guard>} />
           <Route path="/reports/census" element={<Guard when={hasTeam}><Census /></Guard>} />

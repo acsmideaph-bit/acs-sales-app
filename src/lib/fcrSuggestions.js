@@ -1,6 +1,6 @@
 import { differenceInCalendarDays } from 'date-fns'
 import { fmt, toDate } from './dates'
-import { templateFor, filledRows, peso } from './fcrTemplates'
+import { templateFor, filledRows, peso, getBackItems, getBackLine } from './fcrTemplates'
 
 // "Suggested discussion points" for the next visit, built from the account's
 // own past FCRs. This is a transparent rule-based pass over data the KAM
@@ -21,8 +21,8 @@ export function buildSuggestions(pastFcrs = [], today = new Date()) {
   const sectionOf = (fcr, key) => templateFor(fcr.template_id, fcr.template_version).sections.find((s) => s.key === key)
 
   // 1. Get-back items promised last time.
-  const gb = String(latest.form_data?.get_back_items || '').trim()
-  if (gb) push('Follow up', `Promised on ${fmt(latest.visit_date)}: "${gb.split('\n')[0]}${gb.includes('\n') ? '…' : ''}"`)
+  getBackItems(latest.form_data).slice(0, 3)
+    .forEach((g) => push('Follow up', `Promised on ${fmt(latest.visit_date)}: "${getBackLine(g)}"`))
 
   // 2. AR commitments now due or overdue.
   const ar = sectionOf(latest, 'ar_collection')

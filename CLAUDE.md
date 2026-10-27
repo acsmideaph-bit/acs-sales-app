@@ -60,6 +60,21 @@ to the wrong project before.
 
 - **Visit photo is evidence.** One per FCR (`fcr_photos`, private bucket `fcr-photos`, path `<owner>/<fcr>/<uuid>.jpg`), attached only through `attach_fcr_photo`, required by `ensure_fcr_ack_token`, locked once the request is out. Files purge after 60 days (`purge-fcr-photos`, cron `acs-purge-fcr-photos`); keep the metadata. Don't add location-distance flags (Ronald, Oct 14, 2026). Photos come only from the in-app live camera on a phone (`CameraCapture`; laptops hand off by QR in `VisitPhoto`), never a file input; `attach_fcr_photo` rejects a photo without location. FCR saves are guarded by `updated_at` (stale copy on another device can't overwrite). The customer sees the photo on the ack page through the `ack-photo` Edge Function (10-minute signed URL, live token only, verify_jwt off); never make the bucket public.
 
+- **Get-back items are tracked commitments** (Oct 27, 2026). Current forms
+  (dealer v3, sub-dealer v2) store them as rows `{item, due_date}`; older forms
+  as free text. Always read them with `getBackItems()` (JS) or
+  `fcr_get_back_list()` (SQL). Rows open in `get_back_items` when the FCR is
+  APPROVED (trigger) and move only through `set_get_back_status` (the KAM who
+  promised, the account's current KAM, or the direct superior of either; a
+  drop needs a reason). Due dates are required before the ack request.
+- **AI = Gemini free tier, wording only** (Oct 27, 2026). Edge Function
+  `account-insights`: rules in `_shared/insights.ts` pick and rank priorities;
+  Gemini writes why/next action and the KAM/RSM development plan. Gate = the
+  caller can see the account (RLS); history is then read with the service
+  role. Never send names, contacts or project names to the model (scrubber +
+  test `supabase/tests/06_insights_test.ts`). Cached per account in
+  `account_insights`; daily caps; every call in `ai_log`; no key = rules text.
+
 ## Conventions
 
 - Week = **Monday–Sunday** everywhere (`src/lib/dates.js` and
@@ -85,7 +100,9 @@ to the wrong project before.
 - `supabase/tests/` holds a local RLS/workflow smoke test that runs on plain
   Postgres with a stub `auth` schema:
   `psql -f 00_local_auth_stub.sql && psql -f ../migrations/...init.sql && psql -f ../seed/org_roster.sql && psql -f 01_workflow_rls_smoke.sql`
-- Edge Functions: `deno check supabase/functions/*/index.ts`.
+- Edge Functions: `deno check supabase/functions/*/index.ts`;
+  `deno test supabase/tests/06_insights_test.ts` (rules and scrubbing).
+- Get-back RLS/RPC: `05_get_back_ai_smoke.sql` (fake people, rolls back).
 
 ## Known gotchas
 

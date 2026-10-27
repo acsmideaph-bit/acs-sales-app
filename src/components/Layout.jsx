@@ -2,11 +2,13 @@ import { useEffect, useState, useCallback } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, CalendarRange, ClipboardList, CalendarCheck2, Archive,
-  CheckSquare, CalendarClock, FileDown, BarChart3, FileSpreadsheet, Mail, Users, Menu, X, LogOut, Info, UserCog, Target,
+  CheckSquare, CalendarClock, FileDown, BarChart3, FileSpreadsheet, Mail, Users, Menu, X, LogOut, Info, UserCog, Target, ListChecks,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { ROLE_LABELS } from '../lib/roles'
+import { format, subDays } from 'date-fns'
+import { todayYmd } from '../lib/dates'
 import { Modal } from './ui'
 import { AccountSettings } from './AccountSettings'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -40,6 +42,28 @@ export function usePendingCounts(enabled) {
 
 export const notifyPendingChanged = () => window.dispatchEvent(new Event('acs:pending-changed'))
 
+// Overdue get-back items the user can see (RLS: own, team, or all). Items
+// from older forms without a due date are counted on the Get-back page only.
+function useOverdueGetBacks() {
+  const { user } = useAuth()
+  const [n, setN] = useState(0)
+  const load = useCallback(async () => {
+    if (!user) return
+    const { count } = await supabase.from('get_back_items').select('id', { count: 'exact', head: true }).eq('status', 'open')
+      // Same rule as the Get-back page: no due date (older forms) = a week after the visit.
+      .or(`due_date.lt.${todayYmd()},and(due_date.is.null,promised_on.lt.${format(subDays(new Date(), 7), 'yyyy-MM-dd')})`)
+    setN(count || 0)
+  }, [user])
+  useEffect(() => {
+    load()
+    const t = setInterval(load, 300000)
+    window.addEventListener('acs:getback-changed', load)
+    window.addEventListener('focus', load)
+    return () => { clearInterval(t); window.removeEventListener('acs:getback-changed', load); window.removeEventListener('focus', load) }
+  }, [load])
+  return n
+}
+
 function NavItem({ to, icon: Icon, label, badge, end }) {
   return (
     <NavLink to={to} end={end}
@@ -65,6 +89,7 @@ export function Layout() {
   const [settings, setSettings] = useState(false)
   const location = useLocation()
   const pending = usePendingCounts(isApprover)
+  const overdueGetBacks = useOverdueGetBacks()
   useEffect(() => setOpen(false), [location.pathname])
 
   const nav = (
@@ -85,6 +110,7 @@ export function Layout() {
         <Group label="Field work">
           <NavItem to="/mcp/plan" icon={CalendarRange} label="MCP Plan" />
           <NavItem to="/fcr" icon={ClipboardList} label="Field Contact Reports" end />
+          <NavItem to="/get-back" icon={ListChecks} label="Get-back items" badge={overdueGetBacks} />
           <NavItem to="/mcp/actual" icon={CalendarCheck2} label="MCP Actual" />
           <NavItem to="/mcp/archive" icon={Archive} label="MCP Archive" />
         </Group>

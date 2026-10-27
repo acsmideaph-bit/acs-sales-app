@@ -1,6 +1,6 @@
 import XLSX from 'xlsx-js-style'
 import { fmt, fmtDateTime } from './dates'
-import { templateFor, filledRows, num, normalizeFormData } from './fcrTemplates'
+import { templateFor, filledRows, num, normalizeFormData, getBackText } from './fcrTemplates'
 import { STATUS_LABELS } from './roles'
 import { ACK_CHANNEL_LABELS } from './ack'
 import { photoFlags } from './photo'
@@ -108,7 +108,7 @@ export function buildExportWorkbook({ fcrs, archives = [], from, to, scopeLabel 
     { header: 'Status', width: 14, value: (f) => STATUS_LABELS[f.status] },
     { header: 'Reviewed by', width: 20, value: (f) => f.reviewer_name },
     { header: 'Review comment', width: 30, value: (f) => f.review_comment },
-    { header: 'Get-back items', width: 40, value: (f) => f.form_data?.get_back_items },
+    { header: 'Get-back items', width: 40, value: (f) => getBackText(f.form_data) },
     { header: 'Coverage notes', width: 50, value: (f) => f.form_data?.coverage_notes },
   ], fcrs), 'FCRs')
 

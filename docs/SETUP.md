@@ -46,6 +46,14 @@ supabase functions deploy monthly-digest --no-verify-jwt
 
 The digests check the `x-cron-secret` header (pg_cron) or an admin's login (Email log page), so `--no-verify-jwt` is safe for them.
 
+### AI priorities (Gemini free tier, Oct 27, 2026)
+
+1. Sign in to Google AI Studio (aistudio.google.com) with **acs.mideaph@gmail.com** and create an API key. Do not add billing: the free tier is enough and nothing can be charged.
+2. Supabase → Edge Functions → Secrets: add `GEMINI_API_KEY` = that key. Optional: `GEMINI_MODEL` (default `gemini-3.5-flash-lite`), `GEMINI_FALLBACK_MODEL` (default `gemini-3.1-flash-lite`), `AI_DAILY_CAP` (default 400 calls a day for the whole team), `AI_USER_DAILY_CAP` (default 60 per person).
+3. Deploy: `supabase functions deploy account-insights` (JWT verification ON), or Dashboard → Edge Functions → New function `account-insights` → paste `supabase/functions-dashboard/account-insights.ts`.
+
+Without the key the panel still works and says "Rule-based". The free tier of Gemini may use prompts to improve Google products; the function sends business facts only (no customer, owner, contact or project names, no emails or phone numbers). Usage and failures are in the `ai_log` table.
+
 ## 4. Users
 
 ```bash

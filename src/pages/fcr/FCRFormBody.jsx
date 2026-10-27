@@ -45,7 +45,7 @@ function GridSection({ s, value, onChange, readOnly }) {
   const minRows = s.rows || 0
 
   return (
-    <section className="border border-ink rounded overflow-hidden">
+    <section id={`sec-${s.key}`} className="border border-ink rounded overflow-hidden">
       <SectionBar title={s.title} />
       {s.fields?.length > 0 && (
         <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 px-3 py-2.5 border-b border-ink/70 bg-white">
@@ -108,6 +108,9 @@ function GridSection({ s, value, onChange, readOnly }) {
       {cols.filter((c) => c.suggest).map((c) => (
         <datalist key={c.key} id={`dl-${s.key}-${c.key}`}>{c.suggest.map((o) => <option key={o} value={o} />)}</datalist>
       ))}
+      {s.requireDate && !readOnly && (
+        <p className="px-3 py-1.5 border-t border-line bg-white text-2xs text-ink-3">One promise per row, each with a due date. After approval, each row is tracked until the KAM or the RSM marks it done.</p>
+      )}
       {canAdd && (
         <div className="px-2 py-1.5 border-t border-line bg-white">
           <button className="btn-ghost h-7 text-[12px] text-accent" onClick={addRow}><Plus size={13} /> Add row</button>

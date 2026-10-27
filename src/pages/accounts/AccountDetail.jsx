@@ -1,14 +1,16 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Plus, Lightbulb } from 'lucide-react'
+import { ArrowLeft, Pencil, Plus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useProfiles } from '../../lib/data'
 import { useAuth } from '../../context/AuthContext'
 import { fmt } from '../../lib/dates'
-import { peso, templateFor } from '../../lib/fcrTemplates'
+import { peso, templateFor, getBackText } from '../../lib/fcrTemplates'
 import { buildSuggestions } from '../../lib/fcrSuggestions'
 import { fetchPerformance, performanceSnapshot } from '../../lib/targets'
 import { PerformanceTable } from '../../components/Performance'
+import { AccountInsights } from '../../components/AccountInsights'
+import { GetBackPanel } from '../../components/GetBackPanel'
 import { todayYmd } from '../../lib/dates'
 import { PageHeader, Spinner, StatusChip, AckChip, Empty } from '../../components/ui'
 
@@ -99,7 +101,7 @@ export function AccountDetail() {
                         <td className="text-ink-2">{templateFor(f.template_id, f.template_version).shortTitle}</td>
                         <td><AckChip status={f.ack_status} /></td>
                         <td><StatusChip status={f.status} /></td>
-                        <td className="text-ink-2 max-w-[280px] truncate">{f.form_data?.get_back_items}</td>
+                        <td className="text-ink-2 max-w-[280px] truncate">{getBackText(f.form_data)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -124,19 +126,8 @@ export function AccountDetail() {
             </dl>
             {account.notes && <p className="mt-3 pt-3 border-t border-line text-[13px] text-ink-2 whitespace-pre-wrap">{account.notes}</p>}
           </div>
-          <div className="panel">
-            <div className="panel-head"><span className="panel-title flex items-center gap-1.5"><Lightbulb size={14} /> Suggested discussion points</span></div>
-            <div className="p-4">
-              {suggestions.length === 0 ? <p className="text-[13px] text-ink-3">Appears after the first approved FCR for this account.</p> : (
-                <ul className="space-y-2.5">
-                  {suggestions.map((s) => (
-                    <li key={s.id} className="text-[13px] leading-snug"><span className="chip-info mr-1.5">{s.category}</span>{s.text}</li>
-                  ))}
-                </ul>
-              )}
-              <p className="text-2xs text-ink-4 mt-3">Rule-based summary of this account's past approved FCRs. Not AI-generated.</p>
-            </div>
-          </div>
+          <AccountInsights accountId={id} fallback={suggestions} />
+          <GetBackPanel accountId={id} accountKamId={account.kam_id} />
         </div>
       </div>
     </>
